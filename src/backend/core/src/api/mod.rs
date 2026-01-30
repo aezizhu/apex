@@ -49,6 +49,13 @@ use std::sync::Arc;
 
 use crate::orchestrator::SwarmOrchestrator;
 use crate::db::Database;
+use crate::middleware::{
+    SecurityHeadersLayer, SecurityHeadersConfig,
+    RequestSizeLayer, RequestSizeConfig,
+    AuditLayer, AuditConfig,
+    CsrfLayer, CsrfConfig,
+    InputSanitizerLayer, SanitizeConfig,
+};
 use crate::plugins::PluginRegistry;
 
 pub use versioning::{
@@ -110,8 +117,11 @@ pub fn build_router(state: AppState) -> Router {
         // V2 API (preview)
         .nest("/api/v2", v2::v2_router())
         // Middleware
-        .layer(axum_middleware::from_fn(middleware::api_version_headers))
-        .layer(axum_middleware::from_fn(middleware::content_type_validation))
+        .layer(SecurityHeadersLayer::new(SecurityHeadersConfig::default()))
+        .layer(AuditLayer::new(AuditConfig::default()))
+        .layer(CsrfLayer::new(CsrfConfig::default()))
+        .layer(InputSanitizerLayer::new(SanitizeConfig::default()))
+        .layer(RequestSizeLayer::new(RequestSizeConfig::default()))
         .layer(axum_middleware::from_fn(middleware::api_version_headers))
         .layer(axum_middleware::from_fn(middleware::content_type_validation))
         .layer(VersioningLayer::new(version_config))
@@ -140,6 +150,11 @@ pub fn build_router_with_config(state: AppState, version_config: VersionConfig) 
         // V2 API (preview)
         .nest("/api/v2", v2::v2_router())
         // Middleware
+        .layer(SecurityHeadersLayer::new(SecurityHeadersConfig::default()))
+        .layer(AuditLayer::new(AuditConfig::default()))
+        .layer(CsrfLayer::new(CsrfConfig::default()))
+        .layer(InputSanitizerLayer::new(SanitizeConfig::default()))
+        .layer(RequestSizeLayer::new(RequestSizeConfig::default()))
         .layer(VersioningLayer::new(version_config))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
