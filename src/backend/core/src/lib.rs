@@ -15,6 +15,8 @@
 //! - **Validation**: Comprehensive request validation with sync and async support
 //! - **Cache**: Multi-tier caching with tag-based invalidation and HTTP caching middleware
 //! - **Pagination**: Cursor and offset-based pagination utilities
+//! - **RBAC**: Role-based access control with multi-tenancy and policy engine
+//! - **Plugins**: Plugin marketplace with manifest-driven discovery, sandboxed execution, and lifecycle management
 
 pub mod orchestrator;
 pub mod dag;
@@ -29,12 +31,14 @@ pub mod config;
 pub mod error;
 pub mod websocket;
 pub mod middleware;
+pub mod rbac;
 pub mod validation;
 pub mod cache;
 pub mod pagination;
 pub mod health;
 pub mod jobs;
 pub mod events;
+pub mod plugins;
 
 pub use error::{ApexError, Result, ErrorCode, ErrorContext, ErrorDetails, ErrorSeverity, DAGError, OrchestratorError, AgentError, ContractError};
 
@@ -54,11 +58,24 @@ pub mod prelude {
         ApprovalRequest, ApprovalResponse,
         RoomId, RoomType,
     };
+    pub use crate::rbac::{
+        PolicyEngine, PolicyDecision, PolicyError,
+        Permission, Role, RoleId, RoleBinding, UserId, OrganizationId,
+        Organization, OrganizationMember, OrganizationStatus, MemberRole,
+        ResourceScope, PredefinedRole,
+        RequirePermissionLayer, RequirePermissionService, RbacContext,
+    };
     pub use crate::middleware::{
         RateLimitLayer, RateLimitConfig, RateLimitError,
         AuthLayer, AuthConfig, Claims, AuthError, AuthContext, AuthMethod,
         TracingLayer, TracingConfig, RequestContext,
         CompressionLayer, CompressionConfig, CompressionAlgorithm, CompressionLevel,
+        SecurityHeadersLayer, SecurityHeadersConfig, FrameOptions, ReferrerPolicy,
+        RequestSizeLayer, RequestSizeConfig,
+        AuditLayer, AuditConfig, AuditEntry, AuditLevel, AuditLogger,
+        CsrfLayer, CsrfConfig,
+        ApiKeyManager, ApiKeyConfig, ApiKeyEntry, GeneratedKey, KeyStatus,
+        InputSanitizerLayer, SanitizeConfig, InjectionType,
     };
     pub use crate::validation::{
         Validate, ValidateAsync, ValidateFull, ValidationRule,

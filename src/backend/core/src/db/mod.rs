@@ -2,6 +2,8 @@
 //!
 //! Uses PostgreSQL for persistent storage with sqlx.
 
+pub mod health;
+
 use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
@@ -246,6 +248,16 @@ impl Database {
         .await?;
 
         Ok(row)
+    }
+
+    /// Delete an agent by ID. Returns true if a row was deleted.
+    pub async fn delete_agent(&self, agent_id: Uuid) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM agents WHERE id = $1")
+            .bind(agent_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(result.rows_affected() > 0)
     }
 
     /// Get all agents.

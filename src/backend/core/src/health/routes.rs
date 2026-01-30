@@ -58,3 +58,35 @@ pub async fn detailed_health(
     };
     (status, Json(report))
 }
+
+/// GET /health/db/pool - Database connection pool metrics
+pub async fn db_pool_metrics(
+    State(pool): State<sqlx::PgPool>,
+) -> impl IntoResponse {
+    let monitor = crate::db::health::DatabaseHealthMonitor::new(pool, 20, 5);
+    let metrics = monitor.pool_metrics();
+    (StatusCode::OK, Json(metrics))
+}
+
+/// GET /health/db/migrations - Database migration status
+pub async fn db_migration_status(
+    State(pool): State<sqlx::PgPool>,
+) -> impl IntoResponse {
+    let monitor = crate::db::health::DatabaseHealthMonitor::new(pool, 20, 5);
+    match monitor.validate_migrations().await {
+        Ok(result) => (StatusCode::OK, Json(serde_json::to_value(result).unwrap_or_default())),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        ),
+    }
+}
+
+/// GET /health/db/backups - Database backup validation
+pub async fn db_backup_status(
+    State(pool): State<sqlx::PgPool>,
+) -> impl IntoResponse {
+    let monitor = crate::db::health::DatabaseHealthMonitor::new(pool, 20, 5);
+    let result = monitor.validate_backups().await;
+    (StatusCode::OK, Json(serde_json::to_value(result).unwrap_or_default()))
+}
