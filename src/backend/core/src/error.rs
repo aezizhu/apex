@@ -1339,6 +1339,160 @@ impl ApexError {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Domain-Specific Error Types
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Errors specific to DAG operations.
+#[derive(Debug, Error)]
+pub enum DAGError {
+    #[error("Cycle detected in DAG: {details}")]
+    CycleDetected { details: String },
+    #[error("DAG validation failed: {reason}")]
+    ValidationFailed { reason: String },
+    #[error("Task not found in DAG: {task_id}")]
+    TaskNotFound { task_id: uuid::Uuid },
+    #[error("Task already exists in DAG: {task_id}")]
+    TaskAlreadyExists { task_id: uuid::Uuid },
+    #[error("Invalid state transition from {from:?} to {to:?}")]
+    InvalidStateTransition { from: crate::dag::TaskStatus, to: crate::dag::TaskStatus },
+    #[error("Dependency not met: {dependency} required by {task}")]
+    DependencyNotMet { task: String, dependency: String },
+}
+
+impl From<DAGError> for ApexError {
+    fn from(err: DAGError) -> Self {
+        let (code, msg) = match &err {
+            DAGError::CycleDetected { .. } => (ErrorCode::DagCycleDetected, err.to_string()),
+            DAGError::ValidationFailed { .. } => (ErrorCode::DagValidationFailed, err.to_string()),
+            DAGError::TaskNotFound { .. } => (ErrorCode::TaskNotFound, err.to_string()),
+            DAGError::TaskAlreadyExists { .. } => (ErrorCode::TaskAlreadyExists, err.to_string()),
+            DAGError::InvalidStateTransition { .. } => (ErrorCode::InvalidStateTransition, err.to_string()),
+            DAGError::DependencyNotMet { .. } => (ErrorCode::DependencyNotMet, err.to_string()),
+        };
+        ApexError::new(code, msg).with_source(err)
+    }
+}
+
+/// Errors specific to orchestrator operations.
+#[derive(Debug, Error)]
+pub enum OrchestratorError {
+    #[error("DAG execution failed: {reason}")]
+    ExecutionFailed { reason: String },
+    #[error("No available workers for DAG execution")]
+    NoAvailableWorkers,
+    #[error("DAG not found: {dag_id}")]
+    DagNotFound { dag_id: uuid::Uuid },
+    #[error("Orchestrator is shutting down")]
+    ShuttingDown,
+    #[error("Task queue is full (capacity: {capacity})")]
+    QueueFull { capacity: usize },
+}
+
+impl From<OrchestratorError> for ApexError {
+    fn from(err: OrchestratorError) -> Self {
+        let (code, msg) = match &err {
+            OrchestratorError::ExecutionFailed { .. } => (ErrorCode::InternalError, err.to_string()),
+            OrchestratorError::NoAvailableWorkers => (ErrorCode::AgentUnavailable, err.to_string()),
+            OrchestratorError::DagNotFound { .. } => (ErrorCode::RecordNotFound, err.to_string()),
+            OrchestratorError::ShuttingDown => (ErrorCode::ExternalServiceError, err.to_string()),
+            OrchestratorError::QueueFull { .. } => (ErrorCode::AgentOverloaded, err.to_string()),
+        };
+        ApexError::new(code, msg).with_source(err)
+    }
+}
+
+/// Errors specific to agent operations.
+#[derive(Debug, Error)]
+pub enum AgentError {
+    #[error("Agent not found: {agent_id}")]
+    NotFound { agent_id: uuid::Uuid },
+    #[error("Agent is overloaded (current: {current}, max: {max})")]
+    Overloaded { current: u32, max: u32 },
+    #[error("Agent execution failed: {reason}")]
+    ExecutionFailed { reason: String },
+    #[error("Agent timed out after {timeout_secs}s")]
+    Timeout { timeout_secs: u64 },
+    #[error("Agent is unavailable: {reason}")]
+    Unavailable { reason: String },
+    #[error("Loop detected in agent output (similarity: {score:.4}, threshold: {threshold:.4})")]
+    LoopDetected { score: f64, threshold: f64 },
+}
+
+impl From<AgentError> for ApexError {
+    fn from(err: AgentError) -> Self {
+        let (code, msg) = match &err {
+            AgentError::NotFound { .. } => (ErrorCode::AgentNotFound, err.to_string()),
+            AgentError::Overloaded { .. } => (ErrorCode::AgentOverloaded, err.to_string()),
+            AgentError::ExecutionFailed { .. } => (ErrorCode::AgentExecutionFailed, err.to_string()),
+            AgentError::Timeout { .. } => (ErrorCode::AgentTimeout, err.to_string()),
+            AgentError::Unavailable { .. } => (ErrorCode::AgentUnavailable, err.to_string()),
+            AgentError::LoopDetected { .. } => (ErrorCode::LoopDetected, err.to_string()),
+        };
+        ApexError::new(code, msg).with_source(err)
+    }
+}
+
+/// Errors specific to contract operations.
+#[derive(Debug, Error)]
+pub enum ContractError {
+    #[error("Token limit exceeded: used {used}, limit {limit}")]
+    TokenLimitExceeded { used: u64, limit: u64 },
+    #[error("Cost limit exceeded: used \, limit ")]
+    CostLimitExceeded { used: f64, limit: f64 },
+    #[error("Time limit exceeded: elapsed {elapsed_secs}s, limit {limit_secs}s")]
+    TimeLimitExceeded { elapsed_secs: u64, limit_secs: u64 },
+    #[error("API call limit exceeded: used {used}, limit {limit}")]
+    ApiCallLimitExceeded { used: u64, limit: u64 },
+    #[error("Contract not found: {contract_id}")]
+    NotFound { contract_id: uuid::Uuid },
+    #[error("Contract has expired")]
+    Expired,
+    #[error("Contract conservation violation: parent budget {parent} < children sum {children_sum}")]
+    ConservationViolation { parent: f64, children_sum: f64 },
+}
+
+impl From<ContractError> for ApexError {
+    fn from(err: ContractError) -> Self {
+        let (code, msg) = match &err {
+            ContractError::TokenLimitExceeded { .. } => (ErrorCode::TokenLimitExceeded, err.to_string()),
+            ContractError::CostLimitExceeded { .. } => (ErrorCode::CostLimitExceeded, err.to_string()),
+            ContractError::TimeLimitExceeded { .. } => (ErrorCode::TimeLimitExceeded, err.to_string()),
+            ContractError::ApiCallLimitExceeded { .. } => (ErrorCode::ApiCallLimitExceeded, err.to_string()),
+            ContractError::NotFound { .. } => (ErrorCode::ContractNotFound, err.to_string()),
+            ContractError::Expired => (ErrorCode::ContractExpired, err.to_string()),
+            ContractError::ConservationViolation { .. } => (ErrorCode::ContractViolation, err.to_string()),
+        };
+        ApexError::new(code, msg).with_source(err)
+    }
+}
+
+impl From<crate::validation::ValidationErrors> for ApexError {
+    fn from(errors: crate::validation::ValidationErrors) -> Self {
+        let field_messages: Vec<String> = errors.errors().iter().map(|e| format!("{}: {}", e.field, e.message)).collect();
+        let msg = format!("Validation failed: {}", field_messages.join("; "));
+        ApexError::new(ErrorCode::ValidationError, msg).with_context("field_count", errors.errors().len())
+    }
+}
+
+impl From<axum::extract::rejection::JsonRejection> for ApexError {
+    fn from(rejection: axum::extract::rejection::JsonRejection) -> Self {
+        ApexError::new(ErrorCode::InvalidJson, format!("Invalid JSON: {}", rejection))
+    }
+}
+
+impl From<axum::extract::rejection::PathRejection> for ApexError {
+    fn from(rejection: axum::extract::rejection::PathRejection) -> Self {
+        ApexError::new(ErrorCode::InvalidInput, format!("Invalid path parameter: {}", rejection))
+    }
+}
+
+impl From<axum::extract::rejection::QueryRejection> for ApexError {
+    fn from(rejection: axum::extract::rejection::QueryRejection) -> Self {
+        ApexError::new(ErrorCode::InvalidInput, format!("Invalid query parameter: {}", rejection))
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1464,5 +1618,37 @@ mod tests {
         assert!(display.contains("DatabaseError"));
         assert!(display.contains("Database connection failed"));
         assert!(display.contains("Connection refused"));
+    }
+
+    #[test]
+    fn test_dag_error_conversion() {
+        let dag_err = DAGError::CycleDetected { details: "A -> B -> A".to_string() };
+        let apex_err: ApexError = dag_err.into();
+        assert_eq!(apex_err.code(), ErrorCode::DagCycleDetected);
+        assert_eq!(apex_err.http_status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[test]
+    fn test_orchestrator_error_conversion() {
+        let orch_err = OrchestratorError::NoAvailableWorkers;
+        let apex_err: ApexError = orch_err.into();
+        assert_eq!(apex_err.code(), ErrorCode::AgentUnavailable);
+        assert_eq!(apex_err.http_status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn test_agent_error_conversion() {
+        let agent_err = AgentError::NotFound { agent_id: uuid::Uuid::new_v4() };
+        let apex_err: ApexError = agent_err.into();
+        assert_eq!(apex_err.code(), ErrorCode::AgentNotFound);
+        assert_eq!(apex_err.http_status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn test_contract_error_conversion() {
+        let contract_err = ContractError::TokenLimitExceeded { used: 5000, limit: 4000 };
+        let apex_err: ApexError = contract_err.into();
+        assert_eq!(apex_err.code(), ErrorCode::TokenLimitExceeded);
+        assert_eq!(apex_err.http_status(), StatusCode::PAYMENT_REQUIRED);
     }
 }

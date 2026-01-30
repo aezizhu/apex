@@ -99,10 +99,7 @@ pub async fn get_task(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApexError> {
-    let task = state
-        .db
-        .get_task(TaskId(id))
-        .await?
+    let task = state.db.get_task(TaskId(id)).await?
         .ok_or_else(|| ApexError::not_found("Task", id.to_string()))?;
 
     let response = TaskResponse {
@@ -121,10 +118,7 @@ pub async fn get_task_status(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApexError> {
-    let task = state
-        .db
-        .get_task(TaskId(id))
-        .await?
+    let task = state.db.get_task(TaskId(id)).await?
         .ok_or_else(|| ApexError::not_found("Task", id.to_string()))?;
 
     Ok(Json(ApiResponse::success(serde_json::json!({
@@ -139,10 +133,7 @@ pub async fn cancel_task(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApexError> {
-    state
-        .db
-        .update_task_status(TaskId(id), TaskStatus::Cancelled)
-        .await?;
+    state.db.update_task_status(TaskId(id), TaskStatus::Cancelled).await?;
 
     Ok(Json(ApiResponse::success(serde_json::json!({
         "id": id,
@@ -235,17 +226,13 @@ pub async fn get_dag(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApexError> {
-    let dag = state
-        .db
-        .get_dag(id)
-        .await?
+    let dag = state.db.get_dag(id).await?
         .ok_or_else(|| ApexError::not_found("DAG", id.to_string()))?;
 
     let nodes = state.db.get_dag_nodes(id).await.unwrap_or_default();
     let tasks = state.db.get_dag_tasks(id).await.unwrap_or_default();
 
-    let edges: Vec<serde_json::Value> = nodes
-        .iter()
+    let edges: Vec<serde_json::Value> = nodes.iter()
         .filter_map(|node| {
             node.depends_on.as_ref().map(|deps| {
                 deps.iter()
@@ -257,9 +244,7 @@ pub async fn get_dag(
         .collect();
 
     Ok(Json(ApiResponse::success(serde_json::json!({
-        "id": dag.id,
-        "name": dag.name,
-        "status": dag.status,
+        "id": dag.id, "name": dag.name, "status": dag.status,
         "metadata": dag.metadata,
         "created_at": dag.created_at.to_rfc3339(),
         "started_at": dag.started_at.map(|t| t.to_rfc3339()),
@@ -297,10 +282,7 @@ pub async fn get_dag_status(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApexError> {
-    let dag = state
-        .db
-        .get_dag(id)
-        .await?
+    let dag = state.db.get_dag(id).await?
         .ok_or_else(|| ApexError::not_found("DAG", id.to_string()))?;
 
     let tasks = state.db.get_dag_tasks(id).await.unwrap_or_default();
@@ -311,9 +293,7 @@ pub async fn get_dag_status(
     let pending = tasks.iter().filter(|t| t.status == "pending" || t.status == "ready").count();
 
     Ok(Json(ApiResponse::success(serde_json::json!({
-        "id": dag.id,
-        "name": dag.name,
-        "status": dag.status,
+        "id": dag.id, "name": dag.name, "status": dag.status,
         "started_at": dag.started_at.map(|t| t.to_rfc3339()),
         "completed_at": dag.completed_at.map(|t| t.to_rfc3339()),
         "tasks": {
@@ -410,7 +390,6 @@ pub async fn remove_agent(
     State(_state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApexError> {
-    // TODO: Implement agent removal
     Ok(Json(ApiResponse::success(serde_json::json!({"id": id, "status": "removed"}))))
 }
 

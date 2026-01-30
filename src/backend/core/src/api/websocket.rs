@@ -87,7 +87,7 @@ async fn handle_socket(socket: WebSocket, params: WsQueryParams, _app_state: App
     let mut connection = WebSocketConnection::new(tx.clone());
     let conn_id = connection.id;
 
-    // --- Session recovery ---
+    // Session recovery
     let mut recovered_session = None;
     if let Some(ref old_session_id) = params.session_id {
         debug!(session_id = %old_session_id, "Reconnection attempt via query parameter");
@@ -115,7 +115,7 @@ async fn handle_socket(socket: WebSocket, params: WsQueryParams, _app_state: App
 
     let session_id = connection.session_id.clone();
 
-    // --- JWT authentication on connect ---
+    // JWT auth on connect
     if let Some(token) = params.token {
         if connection.state != ConnectionState::Authenticated {
             match ws_state.auth.validate_token(&token) {
@@ -124,18 +124,16 @@ async fn handle_socket(socket: WebSocket, params: WsQueryParams, _app_state: App
                     connection.user_id = Some(claims.sub.clone());
                     connection.claims = Some(claims);
                 }
-                Err(e) => warn!(connection_id = %conn_id, error = %e, "Invalid token on connect"),
+                Err(e) => warn!(connection_id = %conn_id, error = %e, "Invalid token"),
             }
         }
     }
 
-    // --- Register connection ---
     if let Err(e) = ws_state.handler.register_connection(connection, None).await {
         error!(error = %e, "Failed to register connection");
         return;
     }
 
-    // Send connected acknowledgment
     let connected_msg = ServerMessage::Connected {
         connection_id: conn_id.to_string(),
         server_time: Utc::now(),
@@ -148,14 +146,12 @@ async fn handle_socket(socket: WebSocket, params: WsQueryParams, _app_state: App
         }
     }
 
-    // --- Restore session subscriptions and replay missed messages ---
+    // Restore session subscriptions and replay missed messages
     if let Some(ref sd) = recovered_session {
         let room_ids = session::strings_to_room_ids(&sd.subscribed_rooms);
         {
             let mut rm = ws_state.room_manager.write().await;
-            for r in &room_ids {
-                rm.join_room(conn_id, r.clone());
-            }
+            for r in &room_ids { rm.join_room(conn_id, r.clone()); }
         }
         for r in &room_ids {
             let _ = ws_state.handler.add_subscription(conn_id, r.clone()).await;
@@ -176,18 +172,10 @@ async fn handle_socket(socket: WebSocket, params: WsQueryParams, _app_state: App
             session_id: session_id.clone(),
             missed_count: total_missed,
         }).await;
-        info!(
-            session_id = %session_id,
-            rooms_restored = room_ids.len(),
-            missed_messages = total_missed,
-            "Session restored"
-        );
+        info!(session_id = %session_id, rooms_restored = room_ids.len(), missed_messages = total_missed, "Session restored");
     }
 
-    // --- Main event loop with heartbeat and backpressure ---
     let mut heartbeat_timer = interval(Duration::from_secs(ws_config.heartbeat_interval_secs));
-
-    // Forward outgoing messages to the WebSocket sender
     let forward_handle = {
         let mut ws_sender = ws_sender;
         tokio::spawn(async move {
@@ -200,7 +188,6 @@ async fn handle_socket(socket: WebSocket, params: WsQueryParams, _app_state: App
             }
         })
     };
-
     let mut last_activity = Instant::now();
 
     loop {
@@ -235,14 +222,9 @@ async fn handle_socket(socket: WebSocket, params: WsQueryParams, _app_state: App
                 }
             }
             _ = heartbeat_timer.tick() => {
-                // Backpressure detection
                 let remaining = tx.capacity();
                 if remaining < (CHANNEL_CAPACITY - BACKPRESSURE_WARN_THRESHOLD) {
-                    warn!(
-                        connection_id = %conn_id,
-                        remaining_capacity = remaining,
-                        "Backpressure warning: outgoing channel filling up"
-                    );
+                    warn!(connection_id = %conn_id, remaining_capacity = remaining, "Backpressure warning");
                 }
                 if remaining == 0 {
                     warn!(connection_id = %conn_id, "Channel full, disconnecting slow client");
@@ -252,22 +234,18 @@ async fn handle_socket(socket: WebSocket, params: WsQueryParams, _app_state: App
                     });
                     break;
                 }
-                // Send heartbeat
-                if tx.send(ServerMessage::Heartbeat {
-                    timestamp: Utc::now().timestamp_millis(),
-                }).await.is_err() {
+                if tx.send(ServerMessage::Heartbeat { timestamp: Utc::now().timestamp_millis() }).await.is_err() {
                     break;
                 }
-                // Connection timeout detection
                 if last_activity.elapsed() > Duration::from_secs(ws_config.connection_timeout_secs) {
-                    warn!(connection_id = %conn_id, "Connection timed out due to inactivity");
+                    warn!(connection_id = %conn_id, "Connection timed out");
                     break;
                 }
             }
         }
     }
 
-    // --- Persist session for reconnection ---
+    // Persist session for reconnection
     if let Some(ref sm) = ws_state.session_manager {
         if let Some(conn) = ws_state.handler.get_connection(conn_id).await {
             let ws_session = session::WebSocketSession {
@@ -283,7 +261,6 @@ async fn handle_socket(socket: WebSocket, params: WsQueryParams, _app_state: App
         }
     }
 
-    // --- Cleanup ---
     forward_handle.abort();
     ws_state.handler.unregister_connection(conn_id).await;
     ws_state.room_manager.write().await.remove_connection_from_all(conn_id);
@@ -343,21 +320,14 @@ async fn handle_client_message(
 
         ClientMessage::Subscribe { target } => {
             let room_id: RoomId = (&target).into();
-            {
-                state.room_manager.write().await.join_room(conn_id, room_id.clone());
-            }
+            { state.room_manager.write().await.join_room(conn_id, room_id.clone()); }
             let _ = state.handler.add_subscription(conn_id, room_id.clone()).await;
-            let _ = tx.send(ServerMessage::Subscribed {
-                target,
-                current_state: None,
-            }).await;
+            let _ = tx.send(ServerMessage::Subscribed { target, current_state: None }).await;
         }
 
         ClientMessage::Unsubscribe { target } => {
             let room_id: RoomId = (&target).into();
-            {
-                state.room_manager.write().await.leave_room(conn_id, &room_id);
-            }
+            { state.room_manager.write().await.leave_room(conn_id, &room_id); }
             let _ = state.handler.remove_subscription(conn_id, &room_id).await;
             let _ = tx.send(ServerMessage::Unsubscribed { target }).await;
         }
@@ -388,10 +358,7 @@ async fn handle_client_message(
                     if !messages.is_empty() {
                         let _ = tx.send(ServerMessage::MissedUpdates { updates: messages }).await;
                     } else {
-                        let _ = tx.send(ServerMessage::Subscribed {
-                            target,
-                            current_state: None,
-                        }).await;
+                        let _ = tx.send(ServerMessage::Subscribed { target, current_state: None }).await;
                     }
                 }
             }
@@ -401,16 +368,12 @@ async fn handle_client_message(
             if let Some(ref sm) = state.session_manager {
                 match sm.load_session(&session_id).await {
                     Ok(Some(sd)) => {
-                        let last_id = last_message_id
-                            .map(|id| id as i64)
-                            .or(sd.last_seen_event_id)
-                            .unwrap_or(0);
+                        let last_id = last_message_id.map(|id| id as i64)
+                            .or(sd.last_seen_event_id).unwrap_or(0);
                         let room_ids = session::strings_to_room_ids(&sd.subscribed_rooms);
                         let mut all_missed = Vec::new();
                         for r in &room_ids {
-                            {
-                                state.room_manager.write().await.join_room(conn_id, r.clone());
-                            }
+                            { state.room_manager.write().await.join_room(conn_id, r.clone()); }
                             let _ = state.handler.add_subscription(conn_id, r.clone()).await;
                             if let Ok(m) = sm.get_missed_messages(&r.as_str(), last_id).await {
                                 all_missed.extend(m);
@@ -435,7 +398,7 @@ async fn handle_client_message(
                             suggested_action: Some("Create a new connection".to_string()),
                         })).await;
                     }
-                    Err(e) => error!(error = %e, "Failed to load session for reconnect"),
+                    Err(e) => error!(error = %e, "Failed to load session"),
                 }
             }
         }
@@ -453,9 +416,7 @@ async fn handle_client_message(
                         let room_ids = session::strings_to_room_ids(&sd.subscribed_rooms);
                         let mut total_missed: usize = 0;
                         for r in &room_ids {
-                            {
-                                state.room_manager.write().await.join_room(conn_id, r.clone());
-                            }
+                            { state.room_manager.write().await.join_room(conn_id, r.clone()); }
                             let _ = state.handler.add_subscription(conn_id, r.clone()).await;
                             if let Ok(missed) = sm.get_missed_messages(&r.as_str(), since_id).await {
                                 if !missed.is_empty() {
@@ -483,7 +444,7 @@ async fn handle_client_message(
                             suggested_action: Some("Create a new connection".to_string()),
                         })).await;
                     }
-                    Err(e) => error!(error = %e, "Failed to load session for restore"),
+                    Err(e) => error!(error = %e, "Failed to load session"),
                 }
             }
         }

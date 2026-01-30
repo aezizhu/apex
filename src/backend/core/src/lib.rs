@@ -16,6 +16,7 @@
 //! - **Cache**: Multi-tier caching with tag-based invalidation and HTTP caching middleware
 //! - **Pagination**: Cursor and offset-based pagination utilities
 //! - **RBAC**: Role-based access control with multi-tenancy and policy engine
+//! - **Plugins**: Plugin marketplace with manifest-driven discovery, sandboxed execution, and lifecycle management
 
 pub mod orchestrator;
 pub mod dag;
@@ -37,8 +38,9 @@ pub mod pagination;
 pub mod health;
 pub mod jobs;
 pub mod events;
+pub mod plugins;
 
-pub use error::{ApexError, Result, ErrorCode, ErrorContext, ErrorDetails, ErrorSeverity};
+pub use error::{ApexError, Result, ErrorCode, ErrorContext, ErrorDetails, ErrorSeverity, DAGError, OrchestratorError, AgentError, ContractError};
 
 /// Re-export commonly used types
 pub mod prelude {
@@ -47,7 +49,7 @@ pub mod prelude {
     pub use crate::contracts::{AgentContract, ResourceLimits};
     pub use crate::agents::{Agent, AgentId, AgentStatus};
     pub use crate::routing::ModelRouter;
-    pub use crate::error::{ApexError, Result, ErrorCode, ErrorContext, ErrorDetails, ErrorSeverity};
+    pub use crate::error::{ApexError, Result, ErrorCode, ErrorContext, ErrorDetails, ErrorSeverity, DAGError, OrchestratorError, AgentError, ContractError};
     pub use crate::websocket::{
         WebSocketState, WebSocketConfig, WebSocketStats,
         ConnectionId, ConnectionState,
@@ -68,6 +70,12 @@ pub mod prelude {
         AuthLayer, AuthConfig, Claims, AuthError, AuthContext, AuthMethod,
         TracingLayer, TracingConfig, RequestContext,
         CompressionLayer, CompressionConfig, CompressionAlgorithm, CompressionLevel,
+        SecurityHeadersLayer, SecurityHeadersConfig, FrameOptions, ReferrerPolicy,
+        RequestSizeLayer, RequestSizeConfig,
+        AuditLayer, AuditConfig, AuditEntry, AuditLevel, AuditLogger,
+        CsrfLayer, CsrfConfig,
+        ApiKeyManager, ApiKeyConfig, ApiKeyEntry, GeneratedKey, KeyStatus,
+        InputSanitizerLayer, SanitizeConfig, InjectionType,
     };
     pub use crate::validation::{
         Validate, ValidateAsync, ValidateFull, ValidationRule,
