@@ -478,4 +478,123 @@ mod tests {
         assert_eq!(config.max_entry_size, 2 * 1024 * 1024);
         assert!(!config.enable_compression);
     }
+
+    #[test]
+    fn test_config_default_values() {
+        let config = CacheConfig::default();
+        assert_eq!(config.default_ttl, Duration::from_secs(300));
+        assert_eq!(config.max_entry_size, 1024 * 1024);
+        assert!(config.enable_metrics);
+        assert_eq!(config.namespace_prefix, "apex:cache:");
+        assert!(config.enable_compression);
+        assert_eq!(config.compression_threshold, 1024);
+    }
+
+    #[test]
+    fn test_config_builder_namespace_prefix() {
+        let config = CacheConfig::builder()
+            .namespace_prefix("custom:prefix:")
+            .build();
+        assert_eq!(config.namespace_prefix, "custom:prefix:");
+    }
+
+    #[test]
+    fn test_config_builder_compression_threshold() {
+        let config = CacheConfig::builder()
+            .compression_threshold(4096)
+            .build();
+        assert_eq!(config.compression_threshold, 4096);
+    }
+
+    #[test]
+    fn test_config_builder_enable_metrics() {
+        let config = CacheConfig::builder()
+            .enable_metrics(false)
+            .build();
+        assert!(!config.enable_metrics);
+    }
+
+    #[test]
+    fn test_build_key_with_namespace_prefix() {
+        let config = CacheConfig::builder()
+            .namespace_prefix("test:")
+            .build();
+        let cache = Cache::new(
+            Arc::new(InMemoryBackend::new(InMemoryConfig {
+                max_capacity: 100,
+                ..Default::default()
+            })),
+            config,
+        );
+        let key = CacheKey::new(KeyType::Task).with_id("abc");
+        let full_key = cache.build_key(&key);
+        assert!(full_key.starts_with("test:"));
+        assert!(full_key.contains("task"));
+    }
+
+    #[tokio::test]
+    async fn test_cache_exists() {
+        let cache = Cache::in_memory(1000);
+        let key = CacheKey::new(KeyType::Task).with_id("exists-test");
+        let data = TestData {
+            id: "exists-test".to_string(),
+            value: 1,
+        };
+
+        assert!(!cache.exists(&key).await.unwrap());
+        cache.set(&key, &data).await.unwrap();
+        assert!(cache.exists(&key).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_cache_clear() {
+        let cache = Cache::in_memory(1000);
+        let key = CacheKey::new(KeyType::Task).with_id("clear-test");
+        let data = TestData {
+            id: "clear-test".to_string(),
+            value: 99,
+        };
+
+        cache.set(&key, &data).await.unwrap();
+        assert!(cache.exists(&key).await.unwrap());
+
+        cache.clear().await.unwrap();
+        assert!(!cache.exists(&key).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_cache_set_with_custom_ttl() {
+        let cache = Cache::in_memory(1000);
+        let key = CacheKey::new(KeyType::Task).with_id("ttl-test");
+        let data = TestData {
+            id: "ttl-test".to_string(),
+            value: 7,
+        };
+
+        cache
+            .set_with_ttl(&key, &data, Duration::from_secs(60))
+            .await
+            .unwrap();
+        let retrieved: Option<TestData> = cache.get(&key).await.unwrap();
+        assert_eq!(retrieved, Some(data));
+    }
+
+    #[tokio::test]
+    async fn test_cache_delete_nonexistent_key() {
+        let cache = Cache::in_memory(1000);
+        let key = CacheKey::new(KeyType::Task).with_id("nonexistent");
+        let deleted = cache.delete(&key).await.unwrap();
+        assert!(!deleted);
+    }
+
+    #[test]
+    fn test_cache_clone() {
+        let cache = Cache::in_memory(1000);
+        let cloned = cache.clone();
+        // Cloned cache should share the same backend (Arc)
+        assert_eq!(
+            cache.config.namespace_prefix,
+            cloned.config.namespace_prefix
+        );
+    }
 }
