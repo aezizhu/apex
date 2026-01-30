@@ -73,6 +73,8 @@ libc = "0.2"       # For system health checks (disk, memory)
 # Config
 config = "0.14"
 dotenvy = "0.15"
+toml = "0.8"
+humantime-serde = "1.1"
 
 # Crypto
 jsonwebtoken = "9.2"
@@ -94,12 +96,28 @@ tokio-test = "0.4"
 criterion = { version = "0.5", features = ["async_tokio"] }
 fake = { version = "2.9", features = ["derive"] }
 wiremock = "0.5"
+tempfile = "3.10"
 
 [build-dependencies]
 tonic-build = "0.11"
 
 [[bench]]
 name = "orchestrator_bench"
+harness = false
+[[bench]]
+name = "dag_bench"
+harness = false
+
+[[bench]]
+name = "routing_bench"
+harness = false
+
+[[bench]]
+name = "cache_bench"
+harness = false
+
+[[bench]]
+name = "validation_bench"
 harness = false
 
 [profile.release]

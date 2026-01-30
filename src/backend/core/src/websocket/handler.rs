@@ -698,10 +698,23 @@ async fn handle_client_message(
                 return;
             }
 
-            // Send confirmation with current state
+            // Fetch current state from session store for the subscribed room
+            let current_state = if let Some(ref sm) = state.session_manager {
+                match sm.get_missed_messages(&room_id.as_str(), 0).await {
+                    Ok(messages) if !messages.is_empty() => serde_json::to_value(&messages).ok(),
+                    Ok(_) => None,
+                    Err(e) => {
+                        warn!(connection_id = %conn_id, room = %room_id.as_str(), error = %e, "Failed to fetch current state for subscription");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
             let response = ServerMessage::Subscribed {
                 target,
-                current_state: None, // Clients should send GetState after subscribing
+                current_state,
             };
             let _ = tx.send(response).await;
 

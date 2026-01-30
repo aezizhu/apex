@@ -1,0 +1,309 @@
+# ==============================================================================
+# Project Apex - Documentation Pipeline
+# ==============================================================================
+# Builds, validates, and checks documentation for broken links
+# Triggered on pushes to main, PRs, and manual dispatch
+
+name: Docs
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'docs/**'
+      - '*.md'
+      - 'src/**/README.md'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '*.md'
+      - 'src/**/README.md'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================================
+  # Markdown Lint
+  # ============================================================================
+  markdown-lint:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@v18
+        with:
+          globs: |
+            **/*.md
+            !node_modules
+            !**/node_modules
+            !**/target
+            !**/.venv
+
+  # ============================================================================
+  # Broken Link Check
+  # ============================================================================
+  link-check:
+    name: Check Broken Links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check markdown links
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          use-verbose-mode: 'no'
+          config-file: '.github/mlc_config.json'
+          folder-path: 'docs/'
+          file-path: './README.md,./CONTRIBUTING.md,./CHANGELOG.md,./QUICKSTART.md,./SECURITY.md'
+          check-modified-files-only: ${{ github.event_name == 'pull_request' && 'yes' || 'no' }}
+
+  # ============================================================================
+  # OpenAPI Validation
+  # ============================================================================
+  openapi-validate:
+    name: Validate OpenAPI Spec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install OpenAPI linter
+        run: npm install -g @redocly/cli
+
+      - name: Validate OpenAPI spec
+        run: |
+          if [ -f docs/openapi.yaml ]; then
+            redocly lint docs/openapi.yaml --format=github-actions
+          else
+            echo "No OpenAPI spec found - skipping"
+          fi
+
+  # ============================================================================
+  # Build Documentation Site
+  # ============================================================================
+  build-docs:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    needs: [markdown-lint, link-check, openapi-validate]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install documentation tools
+        run: |
+          pip install mkdocs mkdocs-material mkdocs-mermaid2-plugin \
+            mkdocstrings[python] mkdocs-git-revision-date-localized-plugin \
+            mkdocs-minify-plugin
+
+      - name: Build docs site
+        run: |
+          if [ -f mkdocs.yml ]; then
+            mkdocs build --strict
+          else
+            echo "No mkdocs.yml found - performing basic validation"
+            # Validate all markdown files are parseable
+            find docs -name "*.md" -exec python -c "
+          import sys
+          with open(sys.argv[1], 'r') as f:
+              try:
+                  f.read()
+                  print(f'OK: {sys.argv[1]}')
+              except Exception as e:
+                  print(f'FAIL: {sys.argv[1]}: {e}')
+                  sys.exit(1)
+          " {} \;
+          fi
+
+      - name: Upload docs site artifact
+        if: ${{ hashFiles('mkdocs.yml') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: site/
+          retention-days: 7
+
+  # ============================================================================
+  # Generate API Documentation
+  # ============================================================================
+  api-docs:
+    name: Generate API Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate API reference from OpenAPI
+        run: |
+          if [ -f docs/openapi.yaml ]; then
+            npm install -g @redocly/cli
+            redocly build-docs docs/openapi.yaml --output api-reference.html
+          else
+            echo "No OpenAPI spec found - skipping API docs generation"
+          fi
+
+      - name: Upload API docs artifact
+        if: ${{ hashFiles('docs/openapi.yaml') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-reference
+          path: api-reference.html
+          retention-days: 7
+
+  # ============================================================================
+  # Rust Documentation
+  # ============================================================================
+  rust-docs:
+    name: Rust Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protobuf compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src/backend/core -> target
+          cache-on-failure: true
+
+      - name: Build Rust docs
+        working-directory: src/backend/core
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --all-features
+
+      - name: Upload Rust docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-docs
+          path: src/backend/core/target/doc/
+          retention-days: 7
+
+  # ============================================================================
+  # Python Documentation
+  # ============================================================================
+  python-docs:
+    name: Python Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: src/backend/agents
+        run: |
+          pip install -e ".[dev]" 2>/dev/null || pip install -e "."
+          pip install pdoc3
+
+      - name: Build Python docs
+        working-directory: src/backend/agents
+        run: |
+          if [ -d apex_agents ]; then
+            pdoc --html --output-dir docs-output apex_agents --force
+          else
+            echo "No apex_agents package found - skipping"
+          fi
+
+      - name: Upload Python docs artifact
+        uses: actions/upload-artifact@v4
+        if: ${{ hashFiles('src/backend/agents/docs-output/**') != '' }}
+        with:
+          name: python-docs
+          path: src/backend/agents/docs-output/
+          retention-days: 7
+
+  # ============================================================================
+  # Architecture Decision Records
+  # ============================================================================
+  adr-check:
+    name: Validate ADRs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check ADR format
+        run: |
+          if [ -d docs/adr ]; then
+            echo "Checking ADR documents..."
+            for file in docs/adr/*.md; do
+              if [ -f "$file" ]; then
+                echo "Validating: $file"
+                # Check for required sections
+                if ! grep -q "# Status" "$file" && ! grep -q "## Status" "$file"; then
+                  echo "::warning file=$file::ADR missing 'Status' section"
+                fi
+                if ! grep -q "# Context" "$file" && ! grep -q "## Context" "$file"; then
+                  echo "::warning file=$file::ADR missing 'Context' section"
+                fi
+                if ! grep -q "# Decision" "$file" && ! grep -q "## Decision" "$file"; then
+                  echo "::warning file=$file::ADR missing 'Decision' section"
+                fi
+              fi
+            done
+            echo "ADR validation complete"
+          else
+            echo "No ADR directory found - skipping"
+          fi
+
+  # ============================================================================
+  # Documentation Summary
+  # ============================================================================
+  docs-summary:
+    name: Docs Summary
+    runs-on: ubuntu-latest
+    needs:
+      - markdown-lint
+      - link-check
+      - openapi-validate
+      - build-docs
+      - api-docs
+      - rust-docs
+      - python-docs
+      - adr-check
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo "# Documentation Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Markdown Lint | ${{ needs.markdown-lint.result == 'success' && 'Passed' || needs.markdown-lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Link Check | ${{ needs.link-check.result == 'success' && 'Passed' || needs.link-check.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| OpenAPI Validation | ${{ needs.openapi-validate.result == 'success' && 'Passed' || needs.openapi-validate.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Docs | ${{ needs.build-docs.result == 'success' && 'Passed' || needs.build-docs.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| API Docs | ${{ needs.api-docs.result == 'success' && 'Passed' || needs.api-docs.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Rust Docs | ${{ needs.rust-docs.result == 'success' && 'Passed' || needs.rust-docs.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Python Docs | ${{ needs.python-docs.result == 'success' && 'Passed' || needs.python-docs.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ADR Check | ${{ needs.adr-check.result == 'success' && 'Passed' || needs.adr-check.result }} |" >> $GITHUB_STEP_SUMMARY
