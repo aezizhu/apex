@@ -38,6 +38,22 @@ info:
     Real-time updates are available via WebSocket at `wss://api.apex.io/ws`.
     See the WebSocket section for details on subscribing to events.
 
+    ## API Versioning
+
+    The API supports multiple versioning strategies:
+    - **URL Path** (recommended): `/api/v1/tasks`, `/api/v2/tasks`
+    - **Accept Header**: `Accept: application/vnd.apex.v1+json`
+    - **Custom Header**: `X-API-Version: 1`
+
+    ## Content-Type Requirements
+
+    All POST, PUT, and PATCH requests must include `Content-Type: application/json`.
+
+    ## Input Validation
+
+    All string inputs are sanitized (trimmed, HTML-stripped, null-byte-removed).
+    Validation errors return `422 Unprocessable Entity` with field-level details.
+
   version: 1.0.0
   contact:
     name: Apex API Support
@@ -68,6 +84,10 @@ tags:
     description: Health and readiness checks
   - name: Metrics
     description: System metrics and monitoring
+  - name: Contracts
+    description: Resource contract management
+  - name: Stats
+    description: System statistics and overview
   - name: WebSocket
     description: Real-time WebSocket API
 
@@ -1684,6 +1704,244 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+
+  # ============================================================================
+  # Task Status
+  # ============================================================================
+  /tasks/{taskId}/status:
+    get:
+      summary: Get task status
+      description: Returns current execution status including token usage and cost.
+      operationId: getTaskStatus
+      tags: [Tasks]
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Task status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      status: { $ref: '#/components/schemas/TaskStatus' }
+                      tokens_used: { type: integer }
+                      cost_dollars: { type: number, format: double }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # DAG Execution & Status
+  # ============================================================================
+  /dags/{dagId}/execute:
+    post:
+      summary: Execute a DAG
+      description: Triggers execution of a DAG workflow.
+      operationId: executeDag
+      tags: [DAGs]
+      parameters:
+        - name: dagId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: DAG execution result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      dag_id: { type: string, format: uuid }
+                      status: { type: string }
+                      tasks_completed: { type: integer }
+                      tasks_failed: { type: integer }
+                      total_tokens: { type: integer }
+                      total_cost: { type: number, format: double }
+                      duration_ms: { type: integer }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /dags/{dagId}/status:
+    get:
+      summary: Get DAG execution status
+      description: Returns detailed execution status with per-task breakdown.
+      operationId: getDagStatus
+      tags: [DAGs]
+      parameters:
+        - name: dagId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: DAG status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      name: { type: string }
+                      status: { $ref: '#/components/schemas/DAGStatus' }
+                      tasks:
+                        type: object
+                        properties:
+                          total: { type: integer }
+                          completed: { type: integer }
+                          failed: { type: integer }
+                          running: { type: integer }
+                          pending: { type: integer }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # Agent Stats
+  # ============================================================================
+  /agents/{agentId}/stats:
+    get:
+      summary: Get agent statistics
+      description: Returns performance statistics for an agent.
+      operationId: getAgentStats
+      tags: [Agents]
+      parameters:
+        - name: agentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Agent statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      name: { type: string }
+                      tasks_completed: { type: integer }
+                      success_rate: { type: number, format: double }
+                      total_tokens: { type: integer }
+                      total_cost: { type: number, format: double }
+                      avg_latency_ms: { type: number, format: double }
+                      reputation_score: { type: number, format: double }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # Contracts
+  # ============================================================================
+  /contracts:
+    get:
+      summary: List contracts
+      description: Returns all resource contracts.
+      operationId: listContracts
+      tags: [Contracts]
+      responses:
+        '200':
+          description: List of contracts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Contract'
+
+  /contracts/{contractId}:
+    get:
+      summary: Get a contract
+      description: Returns details for a specific resource contract.
+      operationId: getContract
+      tags: [Contracts]
+      parameters:
+        - name: contractId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Contract details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    $ref: '#/components/schemas/Contract'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # System Stats
+  # ============================================================================
+  /stats:
+    get:
+      summary: Get system statistics
+      description: Returns aggregate system statistics.
+      operationId: getSystemStats
+      tags: [Stats]
+      responses:
+        '200':
+          description: System statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      orchestrator:
+                        type: object
+                        properties:
+                          active_dags: { type: integer }
+                          registered_agents: { type: integer }
+                          active_contracts: { type: integer }
+                      database:
+                        type: object
+                        properties:
+                          total_tasks: { type: integer }
+                          completed_tasks: { type: integer }
+                          failed_tasks: { type: integer }
+                          total_tokens: { type: integer }
+                          total_cost: { type: number, format: double }
+
 # ============================================================================
 # Components
 # ============================================================================
@@ -2630,6 +2888,27 @@ components:
               value:
                 type: number
 
+    # Contract Schema
+    Contract:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        agent_id: { type: string, format: uuid }
+        task_id: { type: string, format: uuid }
+        parent_contract_id: { type: string, format: uuid }
+        token_limit: { type: integer }
+        cost_limit: { type: number, format: double }
+        time_limit_seconds: { type: integer }
+        api_call_limit: { type: integer }
+        token_used: { type: integer }
+        cost_used: { type: number, format: double }
+        api_calls_used: { type: integer }
+        status:
+          type: string
+          enum: [active, completed, violated, expired]
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+
     # Error Schema
     Error:
       type: object
@@ -2815,6 +3094,20 @@ components:
                 limit: 100
                 remaining: 0
                 resetAt: "2024-01-15T10:31:00Z"
+
+    Conflict:
+      description: Conflict - Resource state conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    UnsupportedMediaType:
+      description: Unsupported Media Type
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
 
     InternalServerError:
       description: Internal server error

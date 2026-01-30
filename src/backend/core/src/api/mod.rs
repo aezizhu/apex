@@ -28,6 +28,7 @@
 //! - **V2** (Preview): New features, may change without notice
 
 mod handlers;
+pub mod middleware;
 mod websocket;
 pub mod grpc;
 pub mod versioning;
@@ -35,6 +36,7 @@ pub mod v1;
 pub mod v2;
 
 use axum::{
+    middleware as axum_middleware,
     routing::get,
     Router,
 };
@@ -97,6 +99,10 @@ pub fn build_router(state: AppState) -> Router {
         // V2 API (preview)
         .nest("/api/v2", v2::v2_router())
         // Middleware
+        .layer(axum_middleware::from_fn(middleware::api_version_headers))
+        .layer(axum_middleware::from_fn(middleware::content_type_validation))
+        .layer(axum_middleware::from_fn(middleware::api_version_headers))
+        .layer(axum_middleware::from_fn(middleware::content_type_validation))
         .layer(VersioningLayer::new(version_config))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
