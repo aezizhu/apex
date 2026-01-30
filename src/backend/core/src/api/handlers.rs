@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use super::{AppState, ApiResponse};
 use crate::dag::{TaskDAG, Task, TaskId, TaskInput, TaskStatus};
-use crate::agents::Agent;
+use crate::agents::{Agent, AgentId};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Health Check
@@ -431,14 +431,15 @@ pub async fn get_agent(
 }
 
 pub async fn remove_agent(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
-    // TODO: Implement agent removal
-    Json(ApiResponse::success(serde_json::json!({
-        "id": id,
-        "status": "removed"
-    })))
+    state.orchestrator.deregister_agent(AgentId(id));
+    match state.db.delete_agent(id).await {
+        Ok(true) => Json(ApiResponse::success(serde_json::json!({"id": id, "status": "removed"}))),
+        Ok(false) => Json(ApiResponse::error("Agent not found")),
+        Err(e) => Json(ApiResponse::from_apex_error(&e)),
+    }
 }
 
 pub async fn get_agent_stats(

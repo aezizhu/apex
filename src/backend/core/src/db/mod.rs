@@ -248,6 +248,12 @@ impl Database {
         Ok(row)
     }
 
+    /// Delete an agent by ID.
+    pub async fn delete_agent(&self, agent_id: Uuid) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM agents WHERE id = $1").bind(agent_id).execute(&self.pool).await?;
+        Ok(result.rows_affected() > 0)
+    }
+
     /// Get all agents.
     pub async fn get_agents(&self) -> Result<Vec<AgentRow>> {
         let rows = sqlx::query_as::<_, AgentRow>(
