@@ -278,7 +278,12 @@ impl Broadcaster {
             total_delivered: self.total_delivered.load(Ordering::Relaxed),
             total_failed: self.total_failed.load(Ordering::Relaxed),
             broadcasts_per_priority,
-            messages_in_queue: 0, // TODO: Track queue depth
+            // Track queue depth by summing buffered messages across all room channels
+            messages_in_queue: if let Ok(channels) = self.room_channels.try_read() {
+                channels.values().map(|sender| sender.len()).sum()
+            } else {
+                0
+            },
             active_subscribers: self.global_channel.receiver_count() as u64,
         }
     }

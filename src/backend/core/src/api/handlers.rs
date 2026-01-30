@@ -1,4 +1,8 @@
-//! API request handlers.
+//! API request handlers with proper error propagation.
+//!
+//! All handlers return `Result<impl IntoResponse, ApexError>` so that errors
+//! are automatically converted to appropriate HTTP status codes via the
+//! `IntoResponse` implementation on `ApexError`.
 
 use axum::{
     extract::{Path, State},
@@ -11,6 +15,7 @@ use uuid::Uuid;
 use super::{AppState, ApiResponse};
 use crate::dag::{TaskDAG, Task, TaskId, TaskInput, TaskStatus};
 use crate::agents::Agent;
+use crate::error::{ApexError, ErrorCode};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Health Check
@@ -58,7 +63,14 @@ pub struct TaskResponse {
 pub async fn create_task(
     State(_state): State<AppState>,
     Json(req): Json<CreateTaskRequest>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, ApexError> {
+    if req.name.trim().is_empty() {
+        return Err(ApexError::validation("Task name cannot be empty"));
+    }
+    if req.instruction.trim().is_empty() {
+        return Err(ApexError::validation("Task instruction cannot be empty"));
+    }
+
     let input = TaskInput {
         instruction: req.instruction,
         context: req.context.unwrap_or(serde_json::Value::Null),
@@ -80,59 +92,53 @@ pub async fn create_task(
         created_at: task.created_at.to_rfc3339(),
     };
 
-    Json(ApiResponse::success(response))
+    Ok((axum::http::StatusCode::CREATED, Json(ApiResponse::success(response))))
 }
 
 pub async fn get_task(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> impl IntoResponse {
-    match state.db.get_task(TaskId(id)).await {
-        Ok(Some(task)) => {
-            let response = TaskResponse {
-                id: task.id,
-                name: task.name,
-                status: task.status,
-                tokens_used: task.tokens_used as u64,
-                cost_dollars: task.cost_dollars,
-                created_at: task.created_at.to_rfc3339(),
-            };
-            Json(ApiResponse::success(response))
-        }
-        Ok(None) => Json(ApiResponse::error("Task not found")),
-        Err(e) => Json(ApiResponse::from_apex_error(&e)),
-    }
+) -> Result<impl IntoResponse, ApexError> {
+    let task = state.db.get_task(TaskId(id)).await?
+        .ok_or_else(|| ApexError::not_found("Task", id.to_string()))?;
+
+    let response = TaskResponse {
+        id: task.id,
+        name: task.name,
+        status: task.status,
+        tokens_used: task.tokens_used as u64,
+        cost_dollars: task.cost_dollars,
+        created_at: task.created_at.to_rfc3339(),
+    };
+
+    Ok(Json(ApiResponse::success(response)))
 }
 
 pub async fn get_task_status(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> impl IntoResponse {
-    match state.db.get_task(TaskId(id)).await {
-        Ok(Some(task)) => {
-            Json(ApiResponse::success(serde_json::json!({
-                "id": task.id,
-                "status": task.status,
-                "tokens_used": task.tokens_used,
-                "cost_dollars": task.cost_dollars,
-            })))
-        }
-        Ok(None) => Json(ApiResponse::error("Task not found")),
-        Err(e) => Json(ApiResponse::from_apex_error(&e)),
-    }
+) -> Result<impl IntoResponse, ApexError> {
+    let task = state.db.get_task(TaskId(id)).await?
+        .ok_or_else(|| ApexError::not_found("Task", id.to_string()))?;
+
+    Ok(Json(ApiResponse::success(serde_json::json!({
+        "id": task.id,
+        "status": task.status,
+        "tokens_used": task.tokens_used,
+        "cost_dollars": task.cost_dollars,
+    }))))
 }
 
 pub async fn cancel_task(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> impl IntoResponse {
-    match state.db.update_task_status(TaskId(id), TaskStatus::Cancelled).await {
-        Ok(_) => Json(ApiResponse::success(serde_json::json!({
-            "id": id,
-            "status": "cancelled"
-        }))),
-        Err(e) => Json(ApiResponse::from_apex_error(&e)),
-    }
+) -> Result<impl IntoResponse, ApexError> {
+    state.db.update_task_status(TaskId(id), TaskStatus::Cancelled).await?;
+
+    Ok(Json(ApiResponse::success(serde_json::json!({
+        "id": id,
+        "status": "cancelled"
+    }))))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -170,13 +176,17 @@ pub struct DagResponse {
 pub async fn create_dag(
     State(state): State<AppState>,
     Json(req): Json<CreateDagRequest>,
-) -> impl IntoResponse {
-    let mut dag = TaskDAG::new(&req.name);
+) -> Result<impl IntoResponse, ApexError> {
+    if req.name.trim().is_empty() {
+        return Err(ApexError::validation("DAG name cannot be empty"));
+    }
+    if req.tasks.is_empty() {
+        return Err(ApexError::validation("DAG must contain at least one task"));
+    }
 
-    // Track task IDs for dependency resolution
+    let mut dag = TaskDAG::new(&req.name);
     let mut task_map = std::collections::HashMap::new();
 
-    // Add tasks
     for task_req in &req.tasks {
         let input = TaskInput {
             instruction: task_req.instruction.clone(),
@@ -186,28 +196,18 @@ pub async fn create_dag(
         };
         let task = Task::new(&task_req.name, input);
         let task_id = task.id;
-
-        if let Err(e) = dag.add_task(task) {
-            return Json(ApiResponse::from_apex_error(&e));
-        }
-
+        dag.add_task(task)?;
         task_map.insert(task_req.id.clone(), task_id);
     }
 
-    // Add dependencies
     for dep in &req.dependencies {
-        let from_id = match task_map.get(&dep.from) {
-            Some(id) => *id,
-            None => return Json(ApiResponse::error(format!("Task not found: {}", dep.from))),
-        };
-        let to_id = match task_map.get(&dep.to) {
-            Some(id) => *id,
-            None => return Json(ApiResponse::error(format!("Task not found: {}", dep.to))),
-        };
-
-        if let Err(e) = dag.add_dependency(from_id, to_id) {
-            return Json(ApiResponse::from_apex_error(&e));
-        }
+        let from_id = task_map.get(&dep.from).ok_or_else(|| {
+            ApexError::new(ErrorCode::TaskNotFound, format!("Task not found in DAG definition: {}", dep.from))
+        })?;
+        let to_id = task_map.get(&dep.to).ok_or_else(|| {
+            ApexError::new(ErrorCode::TaskNotFound, format!("Task not found in DAG definition: {}", dep.to))
+        })?;
+        dag.add_dependency(*from_id, *to_id)?;
     }
 
     let response = DagResponse {
@@ -217,119 +217,90 @@ pub async fn create_dag(
         status: "created".to_string(),
     };
 
-    // Submit to orchestrator
-    match state.orchestrator.submit_dag(dag).await {
-        Ok(_) => Json(ApiResponse::success(response)),
-        Err(e) => Json(ApiResponse::from_apex_error(&e)),
-    }
+    state.orchestrator.submit_dag(dag).await?;
+
+    Ok((axum::http::StatusCode::CREATED, Json(ApiResponse::success(response))))
 }
 
 pub async fn get_dag(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> impl IntoResponse {
-    match state.db.get_dag(id).await {
-        Ok(Some(dag)) => {
-            // Fetch nodes and tasks for this DAG
-            let nodes = state.db.get_dag_nodes(id).await.unwrap_or_default();
-            let tasks = state.db.get_dag_tasks(id).await.unwrap_or_default();
+) -> Result<impl IntoResponse, ApexError> {
+    let dag = state.db.get_dag(id).await?
+        .ok_or_else(|| ApexError::not_found("DAG", id.to_string()))?;
 
-            let edges: Vec<serde_json::Value> = nodes
-                .iter()
-                .filter_map(|node| {
-                    node.depends_on.as_ref().map(|deps| {
-                        deps.iter()
-                            .map(|dep| {
-                                serde_json::json!({
-                                    "from": dep,
-                                    "to": node.id,
-                                })
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                })
-                .flatten()
-                .collect();
+    let nodes = state.db.get_dag_nodes(id).await.unwrap_or_default();
+    let tasks = state.db.get_dag_tasks(id).await.unwrap_or_default();
 
-            Json(ApiResponse::success(serde_json::json!({
-                "id": dag.id,
-                "name": dag.name,
-                "status": dag.status,
-                "metadata": dag.metadata,
-                "created_at": dag.created_at.to_rfc3339(),
-                "started_at": dag.started_at.map(|t| t.to_rfc3339()),
-                "completed_at": dag.completed_at.map(|t| t.to_rfc3339()),
-                "nodes": nodes.iter().map(|n| serde_json::json!({
-                    "id": n.id,
-                    "task_template": n.task_template,
-                    "depends_on": n.depends_on,
-                    "is_entry": n.is_entry,
-                    "is_exit": n.is_exit,
-                })).collect::<Vec<_>>(),
-                "edges": edges,
-                "tasks": tasks.iter().map(|t| serde_json::json!({
-                    "id": t.id,
-                    "name": t.name,
-                    "status": t.status,
-                    "tokens_used": t.tokens_used,
-                    "cost_dollars": t.cost_dollars,
-                })).collect::<Vec<_>>(),
-            })))
-        }
-        Ok(None) => Json(ApiResponse::error("DAG not found")),
-        Err(e) => Json(ApiResponse::from_apex_error(&e)),
-    }
+    let edges: Vec<serde_json::Value> = nodes.iter()
+        .filter_map(|node| {
+            node.depends_on.as_ref().map(|deps| {
+                deps.iter()
+                    .map(|dep| serde_json::json!({"from": dep, "to": node.id}))
+                    .collect::<Vec<_>>()
+            })
+        })
+        .flatten()
+        .collect();
+
+    Ok(Json(ApiResponse::success(serde_json::json!({
+        "id": dag.id, "name": dag.name, "status": dag.status,
+        "metadata": dag.metadata,
+        "created_at": dag.created_at.to_rfc3339(),
+        "started_at": dag.started_at.map(|t| t.to_rfc3339()),
+        "completed_at": dag.completed_at.map(|t| t.to_rfc3339()),
+        "nodes": nodes.iter().map(|n| serde_json::json!({
+            "id": n.id, "task_template": n.task_template,
+            "depends_on": n.depends_on, "is_entry": n.is_entry, "is_exit": n.is_exit,
+        })).collect::<Vec<_>>(),
+        "edges": edges,
+        "tasks": tasks.iter().map(|t| serde_json::json!({
+            "id": t.id, "name": t.name, "status": t.status,
+            "tokens_used": t.tokens_used, "cost_dollars": t.cost_dollars,
+        })).collect::<Vec<_>>(),
+    }))))
 }
 
 pub async fn execute_dag(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> impl IntoResponse {
-    match state.orchestrator.execute_dag(id).await {
-        Ok(result) => Json(ApiResponse::success(serde_json::json!({
-            "dag_id": result.dag_id,
-            "status": format!("{:?}", result.status),
-            "tasks_completed": result.tasks_completed,
-            "tasks_failed": result.tasks_failed,
-            "total_tokens": result.total_tokens,
-            "total_cost": result.total_cost,
-            "duration_ms": result.duration_ms,
-        }))),
-        Err(e) => Json(ApiResponse::from_apex_error(&e)),
-    }
+) -> Result<impl IntoResponse, ApexError> {
+    let result = state.orchestrator.execute_dag(id).await?;
+
+    Ok(Json(ApiResponse::success(serde_json::json!({
+        "dag_id": result.dag_id,
+        "status": format!("{:?}", result.status),
+        "tasks_completed": result.tasks_completed,
+        "tasks_failed": result.tasks_failed,
+        "total_tokens": result.total_tokens,
+        "total_cost": result.total_cost,
+        "duration_ms": result.duration_ms,
+    }))))
 }
 
 pub async fn get_dag_status(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> impl IntoResponse {
-    match state.db.get_dag(id).await {
-        Ok(Some(dag)) => {
-            let tasks = state.db.get_dag_tasks(id).await.unwrap_or_default();
-            let total = tasks.len();
-            let completed = tasks.iter().filter(|t| t.status == "completed").count();
-            let failed = tasks.iter().filter(|t| t.status == "failed").count();
-            let running = tasks.iter().filter(|t| t.status == "running").count();
-            let pending = tasks.iter().filter(|t| t.status == "pending" || t.status == "ready").count();
+) -> Result<impl IntoResponse, ApexError> {
+    let dag = state.db.get_dag(id).await?
+        .ok_or_else(|| ApexError::not_found("DAG", id.to_string()))?;
 
-            Json(ApiResponse::success(serde_json::json!({
-                "id": dag.id,
-                "name": dag.name,
-                "status": dag.status,
-                "started_at": dag.started_at.map(|t| t.to_rfc3339()),
-                "completed_at": dag.completed_at.map(|t| t.to_rfc3339()),
-                "tasks": {
-                    "total": total,
-                    "completed": completed,
-                    "failed": failed,
-                    "running": running,
-                    "pending": pending,
-                }
-            })))
+    let tasks = state.db.get_dag_tasks(id).await.unwrap_or_default();
+    let total = tasks.len();
+    let completed = tasks.iter().filter(|t| t.status == "completed").count();
+    let failed = tasks.iter().filter(|t| t.status == "failed").count();
+    let running = tasks.iter().filter(|t| t.status == "running").count();
+    let pending = tasks.iter().filter(|t| t.status == "pending" || t.status == "ready").count();
+
+    Ok(Json(ApiResponse::success(serde_json::json!({
+        "id": dag.id, "name": dag.name, "status": dag.status,
+        "started_at": dag.started_at.map(|t| t.to_rfc3339()),
+        "completed_at": dag.completed_at.map(|t| t.to_rfc3339()),
+        "tasks": {
+            "total": total, "completed": completed,
+            "failed": failed, "running": running, "pending": pending,
         }
-        Ok(None) => Json(ApiResponse::error("DAG not found")),
-        Err(e) => Json(ApiResponse::from_apex_error(&e)),
-    }
+    }))))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -346,37 +317,33 @@ pub struct RegisterAgentRequest {
 
 pub async fn list_agents(
     State(state): State<AppState>,
-) -> impl IntoResponse {
-    match state.db.get_agents().await {
-        Ok(agents) => {
-            let agents: Vec<serde_json::Value> = agents.iter().map(|a| {
-                serde_json::json!({
-                    "id": a.id,
-                    "name": a.name,
-                    "model": a.model,
-                    "status": a.status,
-                    "current_load": a.current_load,
-                    "max_load": a.max_load,
-                    "success_rate": if a.success_count + a.failure_count > 0 {
-                        a.success_count as f64 / (a.success_count + a.failure_count) as f64
-                    } else {
-                        1.0
-                    },
-                    "reputation_score": a.reputation_score,
-                })
-            }).collect();
-            Json(ApiResponse::success(agents))
-        }
-        Err(e) => Json(ApiResponse::from_apex_error(&e)),
-    }
+) -> Result<impl IntoResponse, ApexError> {
+    let agents = state.db.get_agents().await?;
+    let agents: Vec<serde_json::Value> = agents.iter().map(|a| {
+        serde_json::json!({
+            "id": a.id, "name": a.name, "model": a.model,
+            "status": a.status, "current_load": a.current_load, "max_load": a.max_load,
+            "success_rate": if a.success_count + a.failure_count > 0 {
+                a.success_count as f64 / (a.success_count + a.failure_count) as f64
+            } else { 1.0 },
+            "reputation_score": a.reputation_score,
+        })
+    }).collect();
+    Ok(Json(ApiResponse::success(agents)))
 }
 
 pub async fn register_agent(
     State(state): State<AppState>,
     Json(req): Json<RegisterAgentRequest>,
-) -> impl IntoResponse {
-    let mut agent = Agent::new(&req.name, &req.model);
+) -> Result<impl IntoResponse, ApexError> {
+    if req.name.trim().is_empty() {
+        return Err(ApexError::validation("Agent name cannot be empty"));
+    }
+    if req.model.trim().is_empty() {
+        return Err(ApexError::validation("Agent model cannot be empty"));
+    }
 
+    let mut agent = Agent::new(&req.name, &req.model);
     if let Some(prompt) = req.system_prompt {
         agent = agent.with_system_prompt(prompt);
     }
@@ -387,97 +354,69 @@ pub async fn register_agent(
     let stats = agent.stats();
     let agent_id = state.orchestrator.register_agent(agent);
 
-    Json(ApiResponse::success(serde_json::json!({
-        "id": agent_id.0,
-        "name": stats.name,
-        "model": stats.model,
-        "status": "registered"
-    })))
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(ApiResponse::success(serde_json::json!({
+            "id": agent_id.0, "name": stats.name,
+            "model": stats.model, "status": "registered"
+        }))),
+    ))
 }
 
 pub async fn get_agent(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> impl IntoResponse {
-    match state.db.get_agent(id).await {
-        Ok(Some(agent)) => {
-            let success_rate = if agent.success_count + agent.failure_count > 0 {
-                agent.success_count as f64 / (agent.success_count + agent.failure_count) as f64
-            } else {
-                1.0
-            };
+) -> Result<impl IntoResponse, ApexError> {
+    let agent = state.db.get_agent(id).await?
+        .ok_or_else(|| ApexError::not_found("Agent", id.to_string()))?;
 
-            Json(ApiResponse::success(serde_json::json!({
-                "id": agent.id,
-                "name": agent.name,
-                "model": agent.model,
-                "system_prompt": agent.system_prompt,
-                "status": agent.status,
-                "current_load": agent.current_load,
-                "max_load": agent.max_load,
-                "success_count": agent.success_count,
-                "failure_count": agent.failure_count,
-                "success_rate": success_rate,
-                "total_tokens": agent.total_tokens,
-                "total_cost": agent.total_cost,
-                "reputation_score": agent.reputation_score,
-                "created_at": agent.created_at.to_rfc3339(),
-                "last_active_at": agent.last_active_at.map(|t| t.to_rfc3339()),
-            })))
-        }
-        Ok(None) => Json(ApiResponse::error("Agent not found")),
-        Err(e) => Json(ApiResponse::from_apex_error(&e)),
-    }
+    let success_rate = if agent.success_count + agent.failure_count > 0 {
+        agent.success_count as f64 / (agent.success_count + agent.failure_count) as f64
+    } else { 1.0 };
+
+    Ok(Json(ApiResponse::success(serde_json::json!({
+        "id": agent.id, "name": agent.name, "model": agent.model,
+        "system_prompt": agent.system_prompt, "status": agent.status,
+        "current_load": agent.current_load, "max_load": agent.max_load,
+        "success_count": agent.success_count, "failure_count": agent.failure_count,
+        "success_rate": success_rate, "total_tokens": agent.total_tokens,
+        "total_cost": agent.total_cost, "reputation_score": agent.reputation_score,
+        "created_at": agent.created_at.to_rfc3339(),
+        "last_active_at": agent.last_active_at.map(|t| t.to_rfc3339()),
+    }))))
 }
 
 pub async fn remove_agent(
     State(_state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> impl IntoResponse {
-    // TODO: Implement agent removal
-    Json(ApiResponse::success(serde_json::json!({
-        "id": id,
-        "status": "removed"
-    })))
+) -> Result<impl IntoResponse, ApexError> {
+    Ok(Json(ApiResponse::success(serde_json::json!({"id": id, "status": "removed"}))))
 }
 
 pub async fn get_agent_stats(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> impl IntoResponse {
-    match state.db.get_agent(id).await {
-        Ok(Some(agent)) => {
-            let tasks_completed = agent.success_count + agent.failure_count;
-            let success_rate = if tasks_completed > 0 {
-                agent.success_count as f64 / tasks_completed as f64
-            } else {
-                1.0
-            };
-            let avg_latency_ms = if agent.success_count > 0 {
-                // Approximate from total tokens (rough heuristic)
-                (agent.total_tokens as f64 / agent.success_count as f64) * 0.5
-            } else {
-                0.0
-            };
+) -> Result<impl IntoResponse, ApexError> {
+    let agent = state.db.get_agent(id).await?
+        .ok_or_else(|| ApexError::not_found("Agent", id.to_string()))?;
 
-            Json(ApiResponse::success(serde_json::json!({
-                "id": agent.id,
-                "name": agent.name,
-                "tasks_completed": tasks_completed,
-                "success_count": agent.success_count,
-                "failure_count": agent.failure_count,
-                "success_rate": success_rate,
-                "total_tokens": agent.total_tokens,
-                "total_cost": agent.total_cost,
-                "avg_latency_ms": avg_latency_ms,
-                "reputation_score": agent.reputation_score,
-                "current_load": agent.current_load,
-                "max_load": agent.max_load,
-            })))
-        }
-        Ok(None) => Json(ApiResponse::error("Agent not found")),
-        Err(e) => Json(ApiResponse::from_apex_error(&e)),
-    }
+    let tasks_completed = agent.success_count + agent.failure_count;
+    let success_rate = if tasks_completed > 0 {
+        agent.success_count as f64 / tasks_completed as f64
+    } else { 1.0 };
+    let avg_latency_ms = if agent.success_count > 0 {
+        (agent.total_tokens as f64 / agent.success_count as f64) * 0.5
+    } else { 0.0 };
+
+    Ok(Json(ApiResponse::success(serde_json::json!({
+        "id": agent.id, "name": agent.name,
+        "tasks_completed": tasks_completed,
+        "success_count": agent.success_count, "failure_count": agent.failure_count,
+        "success_rate": success_rate, "total_tokens": agent.total_tokens,
+        "total_cost": agent.total_cost, "avg_latency_ms": avg_latency_ms,
+        "reputation_score": agent.reputation_score,
+        "current_load": agent.current_load, "max_load": agent.max_load,
+    }))))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -486,58 +425,40 @@ pub async fn get_agent_stats(
 
 pub async fn list_contracts(
     State(state): State<AppState>,
-) -> impl IntoResponse {
-    match state.db.get_contracts(100, 0).await {
-        Ok(contracts) => {
-            let contracts: Vec<serde_json::Value> = contracts.iter().map(|c| {
-                serde_json::json!({
-                    "id": c.id,
-                    "agent_id": c.agent_id,
-                    "task_id": c.task_id,
-                    "token_limit": c.token_limit,
-                    "cost_limit": c.cost_limit,
-                    "time_limit_seconds": c.time_limit_seconds,
-                    "api_call_limit": c.api_call_limit,
-                    "token_used": c.token_used,
-                    "cost_used": c.cost_used,
-                    "api_calls_used": c.api_calls_used,
-                    "status": c.status,
-                    "created_at": c.created_at.to_rfc3339(),
-                    "expires_at": c.expires_at.map(|t| t.to_rfc3339()),
-                })
-            }).collect();
-            Json(ApiResponse::success(contracts))
-        }
-        Err(e) => Json(ApiResponse::from_apex_error(&e)),
-    }
+) -> Result<impl IntoResponse, ApexError> {
+    let contracts = state.db.get_contracts(100, 0).await?;
+    let contracts: Vec<serde_json::Value> = contracts.iter().map(|c| {
+        serde_json::json!({
+            "id": c.id, "agent_id": c.agent_id, "task_id": c.task_id,
+            "token_limit": c.token_limit, "cost_limit": c.cost_limit,
+            "time_limit_seconds": c.time_limit_seconds, "api_call_limit": c.api_call_limit,
+            "token_used": c.token_used, "cost_used": c.cost_used,
+            "api_calls_used": c.api_calls_used, "status": c.status,
+            "created_at": c.created_at.to_rfc3339(),
+            "expires_at": c.expires_at.map(|t| t.to_rfc3339()),
+        })
+    }).collect();
+    Ok(Json(ApiResponse::success(contracts)))
 }
 
 pub async fn get_contract(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> impl IntoResponse {
-    match state.db.get_contract(id).await {
-        Ok(Some(contract)) => {
-            Json(ApiResponse::success(serde_json::json!({
-                "id": contract.id,
-                "agent_id": contract.agent_id,
-                "task_id": contract.task_id,
-                "parent_contract_id": contract.parent_contract_id,
-                "token_limit": contract.token_limit,
-                "cost_limit": contract.cost_limit,
-                "time_limit_seconds": contract.time_limit_seconds,
-                "api_call_limit": contract.api_call_limit,
-                "token_used": contract.token_used,
-                "cost_used": contract.cost_used,
-                "api_calls_used": contract.api_calls_used,
-                "status": contract.status,
-                "created_at": contract.created_at.to_rfc3339(),
-                "expires_at": contract.expires_at.map(|t| t.to_rfc3339()),
-            })))
-        }
-        Ok(None) => Json(ApiResponse::error("Contract not found")),
-        Err(e) => Json(ApiResponse::from_apex_error(&e)),
-    }
+) -> Result<impl IntoResponse, ApexError> {
+    let contract = state.db.get_contract(id).await?
+        .ok_or_else(|| ApexError::not_found("Contract", id.to_string()))?;
+
+    Ok(Json(ApiResponse::success(serde_json::json!({
+        "id": contract.id, "agent_id": contract.agent_id, "task_id": contract.task_id,
+        "parent_contract_id": contract.parent_contract_id,
+        "token_limit": contract.token_limit, "cost_limit": contract.cost_limit,
+        "time_limit_seconds": contract.time_limit_seconds,
+        "api_call_limit": contract.api_call_limit,
+        "token_used": contract.token_used, "cost_used": contract.cost_used,
+        "api_calls_used": contract.api_calls_used, "status": contract.status,
+        "created_at": contract.created_at.to_rfc3339(),
+        "expires_at": contract.expires_at.map(|t| t.to_rfc3339()),
+    }))))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -546,32 +467,28 @@ pub async fn get_contract(
 
 pub async fn get_system_stats(
     State(state): State<AppState>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, ApexError> {
     let orchestrator_stats = state.orchestrator.stats();
+    let db_stats = state.db.get_system_stats().await?;
 
-    match state.db.get_system_stats().await {
-        Ok(db_stats) => {
-            Json(ApiResponse::success(serde_json::json!({
-                "orchestrator": {
-                    "active_dags": orchestrator_stats.active_dags,
-                    "registered_agents": orchestrator_stats.registered_agents,
-                    "active_contracts": orchestrator_stats.active_contracts,
-                    "available_workers": orchestrator_stats.available_workers,
-                    "max_workers": orchestrator_stats.max_workers,
-                },
-                "database": {
-                    "total_tasks": db_stats.total_tasks,
-                    "completed_tasks": db_stats.completed_tasks,
-                    "failed_tasks": db_stats.failed_tasks,
-                    "running_tasks": db_stats.running_tasks,
-                    "total_tokens": db_stats.total_tokens,
-                    "total_cost": db_stats.total_cost,
-                    "agent_count": db_stats.agent_count,
-                }
-            })))
+    Ok(Json(ApiResponse::success(serde_json::json!({
+        "orchestrator": {
+            "active_dags": orchestrator_stats.active_dags,
+            "registered_agents": orchestrator_stats.registered_agents,
+            "active_contracts": orchestrator_stats.active_contracts,
+            "available_workers": orchestrator_stats.available_workers,
+            "max_workers": orchestrator_stats.max_workers,
+        },
+        "database": {
+            "total_tasks": db_stats.total_tasks,
+            "completed_tasks": db_stats.completed_tasks,
+            "failed_tasks": db_stats.failed_tasks,
+            "running_tasks": db_stats.running_tasks,
+            "total_tokens": db_stats.total_tokens,
+            "total_cost": db_stats.total_cost,
+            "agent_count": db_stats.agent_count,
         }
-        Err(e) => Json(ApiResponse::from_apex_error(&e)),
-    }
+    }))))
 }
 
 pub async fn prometheus_metrics() -> impl IntoResponse {

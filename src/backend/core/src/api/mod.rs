@@ -28,6 +28,7 @@
 //! - **V2** (Preview): New features, may change without notice
 
 mod handlers;
+pub mod middleware;
 mod websocket;
 pub mod grpc;
 pub mod versioning;
@@ -35,6 +36,7 @@ pub mod v1;
 pub mod v2;
 
 use axum::{
+    middleware as axum_middleware,
     routing::get,
     Router,
 };
@@ -54,6 +56,7 @@ use crate::middleware::{
     CsrfLayer, CsrfConfig,
     InputSanitizerLayer, SanitizeConfig,
 };
+use crate::plugins::PluginRegistry;
 
 pub use versioning::{
     ApiVersion, ExtractedVersion, Version, VersionConfig, VersionError,
@@ -65,6 +68,16 @@ pub use versioning::{
 pub struct AppState {
     pub orchestrator: Arc<SwarmOrchestrator>,
     pub db: Arc<Database>,
+    pub plugin_registry: Option<PluginRegistry>,
+}
+
+impl AppState {
+    /// Get the plugin registry, creating a default one if not configured.
+    pub fn plugin_registry(&self) -> PluginRegistry {
+        self.plugin_registry
+            .clone()
+            .unwrap_or_else(|| PluginRegistry::new("plugins"))
+    }
 }
 
 /// Build the API router with versioning support.
@@ -109,6 +122,8 @@ pub fn build_router(state: AppState) -> Router {
         .layer(CsrfLayer::new(CsrfConfig::default()))
         .layer(InputSanitizerLayer::new(SanitizeConfig::default()))
         .layer(RequestSizeLayer::new(RequestSizeConfig::default()))
+        .layer(axum_middleware::from_fn(middleware::api_version_headers))
+        .layer(axum_middleware::from_fn(middleware::content_type_validation))
         .layer(VersioningLayer::new(version_config))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
