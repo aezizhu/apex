@@ -398,4 +398,144 @@ mod tests {
         let _ = Required;
         let _ = Email;
     }
+
+    #[test]
+    fn test_valid_user_with_boundary_values() {
+        let user = TestUser {
+            email: "a@b.co".to_string(),
+            name: "Jo".to_string(), // Exactly min length
+            age: 0,                 // Boundary: min of range
+            tags: vec![],
+        };
+        // name meets MinLength(2), age is at range min 0
+        assert!(user.validate().is_ok());
+    }
+
+    #[test]
+    fn test_user_age_at_max_boundary() {
+        let user = TestUser {
+            email: "user@example.com".to_string(),
+            name: "Jane".to_string(),
+            age: 150, // Boundary: max of range
+            tags: vec![],
+        };
+        assert!(user.validate().is_ok());
+    }
+
+    #[test]
+    fn test_user_age_exceeds_max() {
+        let user = TestUser {
+            email: "user@example.com".to_string(),
+            name: "Jane".to_string(),
+            age: 151,
+            tags: vec![],
+        };
+        let result = user.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().has_errors("age"));
+    }
+
+    #[test]
+    fn test_user_negative_age() {
+        let user = TestUser {
+            email: "user@example.com".to_string(),
+            name: "Jane".to_string(),
+            age: -1,
+            tags: vec![],
+        };
+        let result = user.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().has_errors("age"));
+    }
+
+    #[test]
+    fn test_user_empty_email_required() {
+        let user = TestUser {
+            email: "".to_string(),
+            name: "Jane".to_string(),
+            age: 25,
+            tags: vec![],
+        };
+        let result = user.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().has_errors("email"));
+    }
+
+    #[test]
+    fn test_user_name_exactly_at_max_length() {
+        let user = TestUser {
+            email: "user@example.com".to_string(),
+            name: "a".repeat(100), // Exactly max length
+            age: 30,
+            tags: vec![],
+        };
+        assert!(user.validate().is_ok());
+    }
+
+    #[test]
+    fn test_user_name_exceeds_max_length() {
+        let user = TestUser {
+            email: "user@example.com".to_string(),
+            name: "a".repeat(101), // One over max
+            age: 30,
+            tags: vec![],
+        };
+        let result = user.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().has_errors("name"));
+    }
+
+    #[test]
+    fn test_user_tags_at_max_items() {
+        let user = TestUser {
+            email: "user@example.com".to_string(),
+            name: "Jane".to_string(),
+            age: 25,
+            tags: (1..=10).map(|i| format!("tag{}", i)).collect(),
+        };
+        assert!(user.validate().is_ok());
+    }
+
+    #[test]
+    fn test_user_tags_exceed_max_items() {
+        let user = TestUser {
+            email: "user@example.com".to_string(),
+            name: "Jane".to_string(),
+            age: 25,
+            tags: (1..=11).map(|i| format!("tag{}", i)).collect(),
+        };
+        let result = user.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().has_errors("tags"));
+    }
+
+    #[test]
+    fn test_validation_errors_to_apex_error_message_format() {
+        let mut errors = ValidationErrors::new();
+        errors.add_required("username");
+
+        let apex_error: ApexError = errors.into();
+        let msg = apex_error.to_string();
+        assert!(msg.contains("Validation failed"));
+        assert!(msg.contains("username"));
+    }
+
+    #[test]
+    fn test_is_valid_trait_method() {
+        let valid_user = TestUser {
+            email: "test@test.com".to_string(),
+            name: "Bob".to_string(),
+            age: 50,
+            tags: vec![],
+        };
+        assert!(valid_user.is_valid());
+
+        let invalid_user = TestUser {
+            email: "bad".to_string(),
+            name: "X".to_string(),
+            age: 999,
+            tags: vec![],
+        };
+        assert!(!invalid_user.is_valid());
+    }
 }

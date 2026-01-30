@@ -947,4 +947,121 @@ mod tests {
         assert_eq!(CacheDirective::Private.to_header_string(), "private");
         assert_eq!(CacheDirective::StaleWhileRevalidate(60).to_header_string(), "stale-while-revalidate=60");
     }
+
+    #[test]
+    fn test_all_cache_directives() {
+        assert_eq!(CacheDirective::Public.to_header_string(), "public");
+        assert_eq!(CacheDirective::Private.to_header_string(), "private");
+        assert_eq!(CacheDirective::NoCache.to_header_string(), "no-cache");
+        assert_eq!(CacheDirective::NoStore.to_header_string(), "no-store");
+        assert_eq!(CacheDirective::NoTransform.to_header_string(), "no-transform");
+        assert_eq!(CacheDirective::MustRevalidate.to_header_string(), "must-revalidate");
+        assert_eq!(CacheDirective::ProxyRevalidate.to_header_string(), "proxy-revalidate");
+        assert_eq!(CacheDirective::Immutable.to_header_string(), "immutable");
+        assert_eq!(CacheDirective::MaxAge(300).to_header_string(), "max-age=300");
+        assert_eq!(CacheDirective::SMaxAge(120).to_header_string(), "s-maxage=120");
+        assert_eq!(CacheDirective::StaleWhileRevalidate(30).to_header_string(), "stale-while-revalidate=30");
+        assert_eq!(CacheDirective::StaleIfError(600).to_header_string(), "stale-if-error=600");
+    }
+
+    #[test]
+    fn test_api_response_preset() {
+        let cc = CacheControl::api_response(Duration::from_secs(120));
+        let header = cc.build();
+        assert!(header.contains("private"));
+        assert!(header.contains("max-age=120"));
+        assert!(header.contains("must-revalidate"));
+    }
+
+    #[test]
+    fn test_cache_control_stale_directives() {
+        let cc = CacheControl::new()
+            .stale_while_revalidate(Duration::from_secs(30))
+            .stale_if_error(Duration::from_secs(600));
+        let header = cc.build();
+        assert!(header.contains("stale-while-revalidate=30"));
+        assert!(header.contains("stale-if-error=600"));
+    }
+
+    #[test]
+    fn test_cache_control_s_maxage() {
+        let cc = CacheControl::new().s_maxage(Duration::from_secs(60));
+        let header = cc.build();
+        assert!(header.contains("s-maxage=60"));
+    }
+
+    #[test]
+    fn test_cache_control_to_header_value() {
+        let cc = CacheControl::new().public().max_age(Duration::from_secs(300));
+        let hv = cc.to_header_value();
+        let s = hv.to_str().unwrap();
+        assert!(s.contains("public"));
+        assert!(s.contains("max-age=300"));
+    }
+
+    #[test]
+    fn test_etag_from_version() {
+        let etag = ETagGenerator::from_version("v1.2.3");
+        assert!(etag.starts_with('"'));
+        assert!(etag.ends_with('"'));
+    }
+
+    #[test]
+    fn test_etag_from_timestamp() {
+        let ts = Utc::now();
+        let etag = ETagGenerator::from_timestamp(ts);
+        assert!(etag.starts_with('"'));
+        assert!(etag.ends_with('"'));
+    }
+
+    #[test]
+    fn test_weak_etag_matching() {
+        assert!(ETagGenerator::matches("W/\"abc\"", "W/\"abc\""));
+        assert!(ETagGenerator::matches("W/\"abc\"", "\"abc\""));
+    }
+
+    #[test]
+    fn test_matches_any_no_match() {
+        assert!(!ETagGenerator::matches_any("\"abc\"", "\"def\", \"ghi\""));
+    }
+
+    #[test]
+    fn test_glob_exact_match() {
+        assert!(glob_matches("/api/v1", "/api/v1"));
+        assert!(!glob_matches("/api/v1", "/api/v2"));
+    }
+
+    #[test]
+    fn test_glob_wildcard_in_middle() {
+        assert!(glob_matches("/api/*/items", "/api/v1/items"));
+        assert!(!glob_matches("/api/*/items", "/api/v1/other"));
+    }
+
+    #[test]
+    fn test_glob_start_mismatch() {
+        assert!(!glob_matches("/api/*", "/other/path"));
+    }
+
+    #[test]
+    fn test_config_defaults() {
+        let config = CacheMiddlewareConfig::default();
+        assert!(config.enable_caching);
+        assert!(config.enable_etag);
+        assert!(config.enable_cache_control);
+        assert!(!config.use_weak_etag);
+        assert!(!config.excluded_paths.is_empty());
+    }
+
+    #[test]
+    fn test_config_builder_excluded_paths() {
+        let mut config = CacheMiddlewareConfig::default();
+        config.excluded_paths.push("/custom/*".to_string());
+        assert!(config.is_excluded("/custom/something"));
+    }
+
+    #[test]
+    fn test_config_exclusion_with_stream_path() {
+        let config = CacheMiddlewareConfig::default();
+        assert!(config.is_excluded("/api/v1/agents/123/stream"));
+    }
 }

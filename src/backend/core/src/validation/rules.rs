@@ -960,4 +960,265 @@ mod tests {
         assert!(validate_length("name", "John", Some(1), Some(10)).is_ok());
         assert!(validate_length("name", "J", Some(2), None).is_err());
     }
+
+    #[test]
+    fn test_slug_valid() {
+        let rule = Slug;
+        assert!(rule.validate(&"hello-world".to_string()).is_none());
+        assert!(rule.validate(&"test-123".to_string()).is_none());
+    }
+
+    #[test]
+    fn test_slug_invalid() {
+        let rule = Slug;
+        assert!(rule.validate(&"Hello World".to_string()).is_some());
+        assert!(rule.validate(&"invalid_slug!".to_string()).is_some());
+    }
+
+    #[test]
+    fn test_slug_empty() {
+        let rule = Slug;
+        assert!(rule.validate(&"".to_string()).is_none());
+    }
+
+    #[test]
+    fn test_phone_valid() {
+        let rule = Phone;
+        assert!(rule.validate(&"+1234567890".to_string()).is_none());
+        assert!(rule.validate(&"+1-234-567-8901".to_string()).is_none());
+    }
+
+    #[test]
+    fn test_phone_invalid() {
+        let rule = Phone;
+        assert!(rule.validate(&"not-a-phone".to_string()).is_some());
+    }
+
+    #[test]
+    fn test_phone_empty() {
+        let rule = Phone;
+        assert!(rule.validate(&"".to_string()).is_none());
+    }
+
+    #[test]
+    fn test_alphanumeric_valid() {
+        let rule = Alphanumeric;
+        assert!(rule.validate(&"abc123".to_string()).is_none());
+        assert!(rule.validate(&"ABC".to_string()).is_none());
+    }
+
+    #[test]
+    fn test_alphanumeric_invalid() {
+        let rule = Alphanumeric;
+        assert!(rule.validate(&"abc-123".to_string()).is_some());
+        assert!(rule.validate(&"hello world".to_string()).is_some());
+    }
+
+    #[test]
+    fn test_alphanumeric_empty() {
+        let rule = Alphanumeric;
+        assert!(rule.validate(&"".to_string()).is_none());
+    }
+
+    #[test]
+    fn test_exact_length() {
+        let rule = ExactLength(5);
+        assert!(rule.validate(&"hello".to_string()).is_none());
+        assert!(rule.validate(&"hi".to_string()).is_some());
+        assert!(rule.validate(&"toolong".to_string()).is_some());
+    }
+
+    #[test]
+    fn test_length_range() {
+        let rule = LengthRange(2, 5);
+        assert!(rule.validate(&"hi".to_string()).is_none());
+        assert!(rule.validate(&"hello".to_string()).is_none());
+        assert!(rule.validate(&"x".to_string()).is_some());
+        assert!(rule.validate(&"toolong".to_string()).is_some());
+    }
+
+    #[test]
+    fn test_required_option_some() {
+        let rule = RequiredOption;
+        let val: Option<String> = Some("hello".into());
+        assert!(rule.validate(&val).is_none());
+    }
+
+    #[test]
+    fn test_required_option_none() {
+        let rule = RequiredOption;
+        let val: Option<String> = None;
+        assert!(rule.validate(&val).is_some());
+    }
+
+    #[test]
+    fn test_required_string_nonempty() {
+        let rule = RequiredString;
+        assert!(rule.validate(&Some("hello".to_string())).is_none());
+    }
+
+    #[test]
+    fn test_required_string_empty() {
+        let rule = RequiredString;
+        assert!(rule.validate(&Some("".to_string())).is_some());
+    }
+
+    #[test]
+    fn test_required_string_whitespace() {
+        let rule = RequiredString;
+        assert!(rule.validate(&Some("   ".to_string())).is_some());
+    }
+
+    #[test]
+    fn test_required_string_none() {
+        let rule = RequiredString;
+        assert!(rule.validate(&None).is_some());
+    }
+
+    #[test]
+    fn test_required_vec() {
+        let rule = Required;
+        assert!(rule.validate(&vec![1, 2, 3]).is_none());
+        assert!(rule.validate(&Vec::<i32>::new()).is_some());
+    }
+
+    #[test]
+    fn test_min_i32() {
+        let rule = Min(0);
+        assert!(rule.validate(&5).is_none());
+        assert!(rule.validate(&0).is_none());
+        assert!(rule.validate(&-1).is_some());
+    }
+
+    #[test]
+    fn test_max_i32() {
+        let rule = Max(100);
+        assert!(rule.validate(&50).is_none());
+        assert!(rule.validate(&100).is_none());
+        assert!(rule.validate(&101).is_some());
+    }
+
+    #[test]
+    fn test_option_min_length() {
+        let rule = MinLength(3);
+        let val: Option<String> = Some("hello".into());
+        assert!(rule.validate(&val).is_none());
+        let val: Option<String> = Some("hi".into());
+        assert!(rule.validate(&val).is_some());
+        let val: Option<String> = None;
+        assert!(rule.validate(&val).is_none());
+    }
+
+    #[test]
+    fn test_option_max_length() {
+        let rule = MaxLength(5);
+        let val: Option<String> = Some("hello".into());
+        assert!(rule.validate(&val).is_none());
+        let val: Option<String> = Some("toolongvalue".into());
+        assert!(rule.validate(&val).is_some());
+        let val: Option<String> = None;
+        assert!(rule.validate(&val).is_none());
+    }
+
+    #[test]
+    fn test_option_email() {
+        let rule = Email;
+        assert!(rule.validate(&Some("test@example.com".to_string())).is_none());
+        assert!(rule.validate(&Some("invalid".to_string())).is_some());
+        assert!(rule.validate(&None::<String>).is_none());
+    }
+
+    #[test]
+    fn test_option_url() {
+        let rule = Url;
+        assert!(rule.validate(&Some("https://example.com".to_string())).is_none());
+        assert!(rule.validate(&Some("bad-url".to_string())).is_some());
+        assert!(rule.validate(&None::<String>).is_none());
+    }
+
+    #[test]
+    fn test_option_uuid() {
+        let rule = Uuid;
+        assert!(rule.validate(&Some("550e8400-e29b-41d4-a716-446655440000".to_string())).is_none());
+        assert!(rule.validate(&Some("bad-uuid".to_string())).is_some());
+        assert!(rule.validate(&None::<String>).is_none());
+    }
+
+    #[test]
+    fn test_min_items() {
+        let rule = MinItems(2);
+        assert!(rule.validate(&vec![1, 2]).is_none());
+        assert!(rule.validate(&vec![1]).is_some());
+    }
+
+    #[test]
+    fn test_max_items() {
+        let rule = MaxItems(3);
+        assert!(rule.validate(&vec![1, 2, 3]).is_none());
+        assert!(rule.validate(&vec![1, 2, 3, 4]).is_some());
+    }
+
+    #[test]
+    fn test_one_of_with_option() {
+        let rule = OneOf::new(vec!["a", "b", "c"]);
+        assert!(rule.validate(&Some("a")).is_none());
+        assert!(rule.validate(&Some("z")).is_some());
+        assert!(rule.validate(&None::<&str>).is_none());
+    }
+
+    #[test]
+    fn test_pattern_with_description() {
+        let rule = Pattern::with_description(r"^\d{3}$", "three digits").unwrap();
+        assert!(rule.validate(&"123".to_string()).is_none());
+        assert!(rule.validate(&"12".to_string()).is_some());
+        assert_eq!(rule.description(), "matches pattern: three digits");
+    }
+
+    #[test]
+    fn test_validate_required_option() {
+        assert!(validate_required_option("field", &Some(42)).is_ok());
+        assert!(validate_required_option::<i32>("field", &None).is_err());
+    }
+
+    #[test]
+    fn test_validate_url() {
+        assert!(validate_url("url", "https://example.com").is_ok());
+        assert!(validate_url("url", "bad").is_err());
+    }
+
+    #[test]
+    fn test_validate_uuid() {
+        assert!(validate_uuid("id", "550e8400-e29b-41d4-a716-446655440000").is_ok());
+        assert!(validate_uuid("id", "bad").is_err());
+    }
+
+    #[test]
+    fn test_validate_range() {
+        assert!(validate_range("val", 5, Some(0), Some(10)).is_ok());
+        assert!(validate_range("val", -1, Some(0), Some(10)).is_err());
+        assert!(validate_range("val", 11, Some(0), Some(10)).is_err());
+    }
+
+    #[test]
+    fn test_validate_pattern() {
+        let re = Regex::new(r"^\d+$").unwrap();
+        assert!(validate_pattern("num", "123", &re, "digits only").is_ok());
+        assert!(validate_pattern("num", "abc", &re, "digits only").is_err());
+    }
+
+    #[test]
+    fn test_rule_descriptions() {
+        assert!(!Required.description().is_empty());
+        assert!(!MinLength(3).description().is_empty());
+        assert!(!MaxLength(10).description().is_empty());
+        assert!(!Email.description().is_empty());
+        assert!(!Url.description().is_empty());
+        assert!(!Uuid.description().is_empty());
+        assert!(!Min(0i32).description().is_empty());
+        assert!(!Max(100i32).description().is_empty());
+        assert!(!Range::new(0, 100).description().is_empty());
+        assert!(!MinItems(1).description().is_empty());
+        assert!(!MaxItems(10).description().is_empty());
+        assert!(!UniqueItems.description().is_empty());
+    }
 }
