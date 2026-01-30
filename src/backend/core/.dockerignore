@@ -1,0 +1,34 @@
+# Build artifacts
+target/
+*.pdb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+LICENSE
+
+# Environment files
+.env
+.env.*
+
+# Tests (not needed in production image)
+tests/
+benches/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
