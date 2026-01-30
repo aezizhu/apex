@@ -1,0 +1,689 @@
+// Protocol Buffer definitions for Project Apex
+// The world's No. 1 Agent Swarm Orchestration Engine
+//
+// Copyright (c) 2024 Apex Team
+// Licensed under Apache-2.0
+
+syntax = "proto3";
+
+package apex.v1;
+
+option java_package = "io.apex.proto.v1";
+option java_multiple_files = true;
+option go_package = "github.com/apex-swarm/apex/proto/v1;apexv1";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ApexOrchestrator Service
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// The main orchestration service for managing tasks, DAGs, and agents.
+service ApexOrchestrator {
+    // ─────────────────────────────────────────────────────────────────────────
+    // Task Operations
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Submit a new task for execution
+    rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskResponse);
+
+    // Get task details by ID
+    rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+
+    // Cancel a running or pending task
+    rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // DAG Operations
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Create a new DAG with tasks and dependencies
+    rpc CreateDAG(CreateDAGRequest) returns (CreateDAGResponse);
+
+    // Execute a previously created DAG
+    rpc ExecuteDAG(ExecuteDAGRequest) returns (ExecuteDAGResponse);
+
+    // Get the current status of a DAG
+    rpc GetDAGStatus(GetDAGStatusRequest) returns (GetDAGStatusResponse);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Agent Operations
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Register a new agent with the orchestrator
+    rpc RegisterAgent(RegisterAgentRequest) returns (RegisterAgentResponse);
+
+    // List all registered agents with optional filters
+    rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
+
+    // Get detailed statistics for an agent
+    rpc GetAgentStats(GetAgentStatsRequest) returns (GetAgentStatsResponse);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Streaming Operations
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Stream real-time task updates (server streaming)
+    rpc StreamTaskUpdates(StreamTaskUpdatesRequest) returns (stream TaskUpdate);
+
+    // Stream real-time agent status updates (server streaming)
+    rpc StreamAgentUpdates(StreamAgentUpdatesRequest) returns (stream AgentUpdate);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Common Types
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Task status enumeration matching Rust TaskStatus
+enum TaskStatus {
+    TASK_STATUS_UNSPECIFIED = 0;
+    TASK_STATUS_PENDING = 1;
+    TASK_STATUS_READY = 2;
+    TASK_STATUS_RUNNING = 3;
+    TASK_STATUS_COMPLETED = 4;
+    TASK_STATUS_FAILED = 5;
+    TASK_STATUS_CANCELLED = 6;
+}
+
+// Agent status enumeration matching Rust AgentStatus
+enum AgentStatus {
+    AGENT_STATUS_UNSPECIFIED = 0;
+    AGENT_STATUS_IDLE = 1;
+    AGENT_STATUS_BUSY = 2;
+    AGENT_STATUS_ERROR = 3;
+    AGENT_STATUS_PAUSED = 4;
+}
+
+// DAG execution status
+enum DAGStatus {
+    DAG_STATUS_UNSPECIFIED = 0;
+    DAG_STATUS_PENDING = 1;
+    DAG_STATUS_RUNNING = 2;
+    DAG_STATUS_COMPLETED = 3;
+    DAG_STATUS_PARTIAL_FAILURE = 4;
+    DAG_STATUS_FAILED = 5;
+    DAG_STATUS_CANCELLED = 6;
+}
+
+// Contract status
+enum ContractStatus {
+    CONTRACT_STATUS_UNSPECIFIED = 0;
+    CONTRACT_STATUS_ACTIVE = 1;
+    CONTRACT_STATUS_COMPLETED = 2;
+    CONTRACT_STATUS_EXCEEDED = 3;
+    CONTRACT_STATUS_CANCELLED = 4;
+}
+
+// Timestamp wrapper for cross-language compatibility
+message Timestamp {
+    int64 seconds = 1;
+    int32 nanos = 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Task Messages
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Input data for a task
+message TaskInput {
+    // The main instruction/prompt for the task
+    string instruction = 1;
+
+    // Additional context as JSON string
+    string context_json = 2;
+
+    // Input parameters as JSON string
+    string parameters_json = 3;
+
+    // Files or artifacts to process
+    repeated Artifact artifacts = 4;
+}
+
+// Output data from a completed task
+message TaskOutput {
+    // The main result/response
+    string result = 1;
+
+    // Structured data output as JSON string
+    string data_json = 2;
+
+    // Generated artifacts
+    repeated Artifact artifacts = 3;
+
+    // Reasoning/thought process (for debugging)
+    optional string reasoning = 4;
+}
+
+// An artifact (file, image, etc.) associated with a task
+message Artifact {
+    string name = 1;
+    string mime_type = 2;
+    uint64 size_bytes = 3;
+    optional string url = 4;
+    optional string content_hash = 5;
+}
+
+// Complete task representation
+message Task {
+    // Unique identifier (UUID string)
+    string id = 1;
+
+    // Parent task ID (if this is a subtask)
+    optional string parent_id = 2;
+
+    // Human-readable name
+    string name = 3;
+
+    // Current status
+    TaskStatus status = 4;
+
+    // Task priority (higher = more urgent)
+    int32 priority = 5;
+
+    // Input data
+    TaskInput input = 6;
+
+    // Output data (populated on completion)
+    optional TaskOutput output = 7;
+
+    // Error message (populated on failure)
+    optional string error = 8;
+
+    // ID of the agent assigned to this task
+    optional string agent_id = 9;
+
+    // Contract ID governing this task
+    optional string contract_id = 10;
+
+    // Number of retry attempts made
+    uint32 retry_count = 11;
+
+    // Maximum retry attempts allowed
+    uint32 max_retries = 12;
+
+    // Tokens consumed by this task
+    uint64 tokens_used = 13;
+
+    // Cost in dollars (stored as microdollars for precision)
+    int64 cost_microdollars = 14;
+
+    // Creation timestamp
+    Timestamp created_at = 15;
+
+    // When execution started
+    optional Timestamp started_at = 16;
+
+    // When execution completed
+    optional Timestamp completed_at = 17;
+
+    // Distributed tracing context
+    optional string trace_id = 18;
+    optional string span_id = 19;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DAG Messages
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// A dependency edge in the DAG
+message TaskDependency {
+    // Source task ID (must complete first)
+    string from_task_id = 1;
+
+    // Target task ID (depends on source)
+    string to_task_id = 2;
+}
+
+// Task definition for DAG creation
+message TaskDefinition {
+    // Optional ID (auto-generated if not provided)
+    optional string id = 1;
+
+    // Human-readable name
+    string name = 2;
+
+    // Task input
+    TaskInput input = 3;
+
+    // Priority
+    int32 priority = 4;
+
+    // Max retries
+    uint32 max_retries = 5;
+
+    // Resource limits for this task
+    optional ResourceLimits limits = 6;
+}
+
+// Resource limits for contracts
+message ResourceLimits {
+    // Maximum tokens that can be consumed
+    uint64 token_limit = 1;
+
+    // Maximum cost in microdollars
+    int64 cost_limit_microdollars = 2;
+
+    // Maximum number of API calls
+    uint64 api_call_limit = 3;
+
+    // Maximum execution time in seconds
+    uint64 time_limit_seconds = 4;
+}
+
+// Complete DAG representation
+message DAG {
+    // Unique identifier (UUID string)
+    string id = 1;
+
+    // Human-readable name
+    string name = 2;
+
+    // All tasks in the DAG
+    repeated Task tasks = 3;
+
+    // Dependency edges
+    repeated TaskDependency dependencies = 4;
+
+    // Creation timestamp
+    Timestamp created_at = 5;
+
+    // Current status
+    DAGStatus status = 6;
+}
+
+// DAG execution statistics
+message DAGStats {
+    uint32 total = 1;
+    uint32 pending = 2;
+    uint32 ready = 3;
+    uint32 running = 4;
+    uint32 completed = 5;
+    uint32 failed = 6;
+    uint32 cancelled = 7;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Agent Messages
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Tool configuration for an agent
+message Tool {
+    string name = 1;
+    string description = 2;
+    string parameters_json = 3;
+    bool enabled = 4;
+}
+
+// Agent definition for registration
+message AgentDefinition {
+    // Human-readable name
+    string name = 1;
+
+    // Model to use (e.g., "gpt-4", "claude-3-sonnet")
+    string model = 2;
+
+    // System prompt defining agent's behavior
+    string system_prompt = 3;
+
+    // Available tools
+    repeated Tool tools = 4;
+
+    // Maximum concurrent tasks
+    uint32 max_load = 5;
+}
+
+// Complete agent representation
+message Agent {
+    // Unique identifier (UUID string)
+    string id = 1;
+
+    // Human-readable name
+    string name = 2;
+
+    // Model being used
+    string model = 3;
+
+    // System prompt
+    string system_prompt = 4;
+
+    // Available tools
+    repeated Tool tools = 5;
+
+    // Current status
+    AgentStatus status = 6;
+
+    // Current load
+    uint32 current_load = 7;
+
+    // Maximum load
+    uint32 max_load = 8;
+
+    // Creation timestamp
+    Timestamp created_at = 9;
+
+    // Last activity timestamp
+    optional Timestamp last_active_at = 10;
+}
+
+// Detailed agent statistics
+message AgentStats {
+    // Agent ID
+    string id = 1;
+
+    // Agent name
+    string name = 2;
+
+    // Model being used
+    string model = 3;
+
+    // Current status
+    AgentStatus status = 4;
+
+    // Current load
+    uint32 current_load = 5;
+
+    // Maximum load
+    uint32 max_load = 6;
+
+    // Total successful completions
+    uint64 success_count = 7;
+
+    // Total failed executions
+    uint64 failure_count = 8;
+
+    // Success rate (0.0 - 1.0, stored as millionths)
+    uint64 success_rate_millionths = 9;
+
+    // Total tokens consumed
+    uint64 total_tokens = 10;
+
+    // Total cost in microdollars
+    int64 total_cost_microdollars = 11;
+
+    // Reputation score (0.0 - 1.0, stored as millionths)
+    uint64 reputation_score_millionths = 12;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Request/Response Messages
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task Requests/Responses
+// ─────────────────────────────────────────────────────────────────────────────
+
+message SubmitTaskRequest {
+    // Task name
+    string name = 1;
+
+    // Task input
+    TaskInput input = 2;
+
+    // Priority (optional, defaults to 0)
+    int32 priority = 3;
+
+    // Max retries (optional, defaults to 3)
+    uint32 max_retries = 4;
+
+    // Resource limits (optional)
+    optional ResourceLimits limits = 5;
+
+    // Parent task ID (for subtasks)
+    optional string parent_task_id = 6;
+}
+
+message SubmitTaskResponse {
+    // The submitted task
+    Task task = 1;
+}
+
+message GetTaskRequest {
+    // Task ID to retrieve
+    string task_id = 1;
+}
+
+message GetTaskResponse {
+    // The requested task
+    Task task = 1;
+}
+
+message CancelTaskRequest {
+    // Task ID to cancel
+    string task_id = 1;
+
+    // Reason for cancellation
+    optional string reason = 2;
+
+    // Whether to cascade cancellation to dependent tasks
+    bool cascade = 3;
+}
+
+message CancelTaskResponse {
+    // Whether cancellation was successful
+    bool success = 1;
+
+    // List of task IDs that were cancelled (including cascaded)
+    repeated string cancelled_task_ids = 2;
+
+    // Error message if cancellation failed
+    optional string error = 3;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DAG Requests/Responses
+// ─────────────────────────────────────────────────────────────────────────────
+
+message CreateDAGRequest {
+    // DAG name
+    string name = 1;
+
+    // Tasks to include in the DAG
+    repeated TaskDefinition tasks = 2;
+
+    // Dependencies between tasks
+    repeated TaskDependency dependencies = 3;
+}
+
+message CreateDAGResponse {
+    // The created DAG
+    DAG dag = 1;
+}
+
+message ExecuteDAGRequest {
+    // DAG ID to execute
+    string dag_id = 1;
+
+    // Whether to wait for completion (synchronous execution)
+    bool wait_for_completion = 2;
+
+    // Timeout in seconds (only for synchronous execution)
+    optional uint64 timeout_seconds = 3;
+}
+
+message ExecuteDAGResponse {
+    // DAG ID
+    string dag_id = 1;
+
+    // Execution status
+    DAGStatus status = 2;
+
+    // Statistics
+    DAGStats stats = 3;
+
+    // Total tokens used
+    uint64 total_tokens = 4;
+
+    // Total cost in microdollars
+    int64 total_cost_microdollars = 5;
+
+    // Duration in milliseconds
+    uint64 duration_ms = 6;
+
+    // Error message if execution failed
+    optional string error = 7;
+}
+
+message GetDAGStatusRequest {
+    // DAG ID
+    string dag_id = 1;
+}
+
+message GetDAGStatusResponse {
+    // DAG ID
+    string dag_id = 1;
+
+    // Current status
+    DAGStatus status = 2;
+
+    // Statistics
+    DAGStats stats = 3;
+
+    // All tasks with current state
+    repeated Task tasks = 4;
+
+    // Total tokens used so far
+    uint64 total_tokens = 5;
+
+    // Total cost in microdollars so far
+    int64 total_cost_microdollars = 6;
+
+    // Duration so far in milliseconds
+    uint64 duration_ms = 7;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent Requests/Responses
+// ─────────────────────────────────────────────────────────────────────────────
+
+message RegisterAgentRequest {
+    // Agent definition
+    AgentDefinition agent = 1;
+}
+
+message RegisterAgentResponse {
+    // The registered agent
+    Agent agent = 1;
+}
+
+message ListAgentsRequest {
+    // Filter by status (optional)
+    optional AgentStatus status_filter = 1;
+
+    // Filter by model (optional)
+    optional string model_filter = 2;
+
+    // Pagination: offset
+    uint32 offset = 3;
+
+    // Pagination: limit (max 100)
+    uint32 limit = 4;
+}
+
+message ListAgentsResponse {
+    // List of agents
+    repeated Agent agents = 1;
+
+    // Total count (for pagination)
+    uint32 total_count = 2;
+}
+
+message GetAgentStatsRequest {
+    // Agent ID
+    string agent_id = 1;
+}
+
+message GetAgentStatsResponse {
+    // Agent statistics
+    AgentStats stats = 1;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Streaming Requests/Responses
+// ─────────────────────────────────────────────────────────────────────────────
+
+message StreamTaskUpdatesRequest {
+    // Filter by specific task IDs (optional, empty = all tasks)
+    repeated string task_ids = 1;
+
+    // Filter by DAG ID (optional)
+    optional string dag_id = 2;
+
+    // Include only certain statuses (optional, empty = all statuses)
+    repeated TaskStatus status_filter = 3;
+}
+
+message TaskUpdate {
+    // The task that was updated
+    Task task = 1;
+
+    // Previous status (if status changed)
+    optional TaskStatus previous_status = 2;
+
+    // Update timestamp
+    Timestamp timestamp = 3;
+
+    // Update type
+    TaskUpdateType update_type = 4;
+}
+
+enum TaskUpdateType {
+    TASK_UPDATE_TYPE_UNSPECIFIED = 0;
+    TASK_UPDATE_TYPE_CREATED = 1;
+    TASK_UPDATE_TYPE_STATUS_CHANGED = 2;
+    TASK_UPDATE_TYPE_PROGRESS = 3;
+    TASK_UPDATE_TYPE_COMPLETED = 4;
+    TASK_UPDATE_TYPE_FAILED = 5;
+    TASK_UPDATE_TYPE_CANCELLED = 6;
+}
+
+message StreamAgentUpdatesRequest {
+    // Filter by specific agent IDs (optional, empty = all agents)
+    repeated string agent_ids = 1;
+
+    // Include only certain statuses (optional, empty = all statuses)
+    repeated AgentStatus status_filter = 2;
+}
+
+message AgentUpdate {
+    // The agent that was updated
+    Agent agent = 1;
+
+    // Previous status (if status changed)
+    optional AgentStatus previous_status = 2;
+
+    // Update timestamp
+    Timestamp timestamp = 3;
+
+    // Update type
+    AgentUpdateType update_type = 4;
+
+    // Current task being executed (if busy)
+    optional string current_task_id = 5;
+}
+
+enum AgentUpdateType {
+    AGENT_UPDATE_TYPE_UNSPECIFIED = 0;
+    AGENT_UPDATE_TYPE_REGISTERED = 1;
+    AGENT_UPDATE_TYPE_STATUS_CHANGED = 2;
+    AGENT_UPDATE_TYPE_TASK_STARTED = 3;
+    AGENT_UPDATE_TYPE_TASK_COMPLETED = 4;
+    AGENT_UPDATE_TYPE_LOAD_CHANGED = 5;
+    AGENT_UPDATE_TYPE_UNREGISTERED = 6;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Error Types
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Standard error response
+message Error {
+    // Error code
+    string code = 1;
+
+    // Human-readable message
+    string message = 2;
+
+    // Additional details as JSON
+    optional string details_json = 3;
+
+    // Whether the operation can be retried
+    bool retryable = 4;
+}

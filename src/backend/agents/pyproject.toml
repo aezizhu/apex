@@ -1,0 +1,61 @@
+[project]
+name = "apex-agents"
+version = "0.1.0"
+description = "Project Apex - Python Agent Runtime"
+authors = [
+    {name = "Aezi", email = "aezi.zhu@icloud.com"}
+]
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.26.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.0.0",
+    "openai>=1.6.0",
+    "anthropic>=0.8.0",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.29.0",
+    "redis>=5.0.0",
+    "opentelemetry-api>=1.22.0",
+    "opentelemetry-sdk>=1.22.0",
+    "opentelemetry-exporter-otlp>=1.22.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.22.0",
+    "opentelemetry-instrumentation-httpx>=0.43b0",
+    "opentelemetry-semantic-conventions>=0.43b0",
+    "structlog>=23.3.0",
+    "tenacity>=8.2.0",
+    "numpy>=1.26.0",
+    "tiktoken>=0.5.0",
+]
+
+[project.scripts]
+apex-worker = "main:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+    "pre-commit>=3.6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

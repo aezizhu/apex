@@ -1,0 +1,247 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Project Apex - Helm Values
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# ──────────────────────────────────────────────────────────────────────────────
+# API Server
+# ──────────────────────────────────────────────────────────────────────────────
+api:
+  replicaCount: 2
+
+  image:
+    repository: apex/api
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8080
+    grpcPort: 50051
+
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    hosts:
+      - host: api.apex.local
+        paths:
+          - path: /
+            pathType: Prefix
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+  env:
+    RUST_LOG: "info,apex_core=debug"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Worker Pool
+# ──────────────────────────────────────────────────────────────────────────────
+worker:
+  replicaCount: 3
+  workersPerPod: 1
+  agentsPerWorker: 5
+
+  image:
+    repository: apex/worker
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1"
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    # Scale based on queue depth
+    metrics:
+      - type: External
+        external:
+          metric:
+            name: apex_queue_depth
+          target:
+            type: AverageValue
+            averageValue: 10
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Dashboard
+# ──────────────────────────────────────────────────────────────────────────────
+dashboard:
+  replicaCount: 2
+
+  image:
+    repository: apex/dashboard
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  ingress:
+    enabled: true
+    className: nginx
+    hosts:
+      - host: apex.local
+        paths:
+          - path: /
+            pathType: Prefix
+
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PostgreSQL
+# ──────────────────────────────────────────────────────────────────────────────
+postgresql:
+  enabled: true
+  auth:
+    username: apex
+    password: apex_secret
+    database: apex
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Redis
+# ──────────────────────────────────────────────────────────────────────────────
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Secrets
+# ──────────────────────────────────────────────────────────────────────────────
+secrets:
+  # These should be provided via --set or values file override
+  openaiApiKey: ""
+  anthropicApiKey: ""
+  jwtSecret: ""
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Monitoring
+# ──────────────────────────────────────────────────────────────────────────────
+monitoring:
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+
+  prometheusRule:
+    enabled: true
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Ingress (consolidated)
+# ──────────────────────────────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/websocket-services: "apex-api"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  hosts:
+    - host: apex.local
+  tls: []
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Configuration
+# ──────────────────────────────────────────────────────────────────────────────
+config:
+  orchestrator:
+    maxConcurrentAgents: "100"
+    defaultTokenLimit: "20000"
+    defaultCostLimit: "0.25"
+    defaultTimeLimitSeconds: "300"
+
+  routing:
+    economyModel: "gpt-4o-mini"
+    standardModel: "gpt-4o"
+    premiumModel: "claude-3-opus"
+    confidenceThreshold: "0.85"
+
+  observability:
+    serviceName: "apex"
+    otlpEndpoint: "http://jaeger-collector:4317"
+
+  logging:
+    level: "info,apex_core=debug"
+
+  api:
+    corsOrigins: "*"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Service Account
+# ──────────────────────────────────────────────────────────────────────────────
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+imagePullSecrets: []

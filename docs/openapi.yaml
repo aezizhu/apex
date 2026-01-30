@@ -1,0 +1,2950 @@
+openapi: 3.0.3
+info:
+  title: Project Apex API
+  description: |
+    Project Apex is a comprehensive AI agent orchestration platform for managing tasks, agents,
+    DAGs (Directed Acyclic Graphs), and approval workflows.
+
+    ## Overview
+
+    The Apex API provides endpoints for:
+    - **Tasks**: Create, manage, and monitor AI agent tasks
+    - **Agents**: Register and manage AI agents in the system
+    - **DAGs**: Define and execute complex multi-step workflows
+    - **Approvals**: Human-in-the-loop approval workflows
+    - **Metrics**: System and performance metrics
+    - **Health**: Service health and readiness checks
+
+    ## Authentication
+
+    The API supports two authentication methods:
+    - **Bearer Token**: Include `Authorization: Bearer <token>` header
+    - **API Key**: Include `X-API-Key: <api-key>` header
+
+    ## Rate Limiting
+
+    Rate limits are enforced based on your subscription tier:
+    - **Standard**: 100 requests/minute
+    - **Pro**: 1,000 requests/minute
+    - **Enterprise**: Unlimited
+
+    Rate limit information is included in response headers:
+    - `X-RateLimit-Limit`: Maximum requests per window
+    - `X-RateLimit-Remaining`: Remaining requests in current window
+    - `X-RateLimit-Reset`: Unix timestamp when the rate limit resets
+
+    ## WebSocket
+
+    Real-time updates are available via WebSocket at `wss://api.apex.io/ws`.
+    See the WebSocket section for details on subscribing to events.
+
+  version: 1.0.0
+  contact:
+    name: Apex API Support
+    email: support@apex.io
+    url: https://docs.apex.io
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.apex.io/api/v1
+    description: Production server
+  - url: https://staging-api.apex.io/api/v1
+    description: Staging server
+  - url: http://localhost:8080/api/v1
+    description: Local development server
+
+tags:
+  - name: Tasks
+    description: Task management operations
+  - name: Agents
+    description: Agent management operations
+  - name: DAGs
+    description: DAG (workflow) management operations
+  - name: Approvals
+    description: Approval workflow operations
+  - name: Health
+    description: Health and readiness checks
+  - name: Metrics
+    description: System metrics and monitoring
+  - name: WebSocket
+    description: Real-time WebSocket API
+
+security:
+  - BearerAuth: []
+  - ApiKeyAuth: []
+
+paths:
+  # ============================================================================
+  # Tasks
+  # ============================================================================
+  /tasks:
+    get:
+      tags:
+        - Tasks
+      summary: List tasks
+      description: Retrieve a paginated list of tasks with optional filtering.
+      operationId: listTasks
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+        - name: status
+          in: query
+          description: Filter by task status
+          schema:
+            $ref: '#/components/schemas/TaskStatus'
+        - name: agentId
+          in: query
+          description: Filter by assigned agent ID
+          schema:
+            type: string
+            format: uuid
+        - name: dagId
+          in: query
+          description: Filter by parent DAG ID
+          schema:
+            type: string
+            format: uuid
+        - name: priority
+          in: query
+          description: Filter by task priority
+          schema:
+            $ref: '#/components/schemas/TaskPriority'
+        - name: tags
+          in: query
+          description: Filter by tags (comma-separated)
+          schema:
+            type: string
+          example: "research,ai"
+        - name: createdAfter
+          in: query
+          description: Filter tasks created after this timestamp
+          schema:
+            type: string
+            format: date-time
+        - name: createdBefore
+          in: query
+          description: Filter tasks created before this timestamp
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskList'
+              example:
+                items:
+                  - id: "550e8400-e29b-41d4-a716-446655440000"
+                    name: "Research AI Trends"
+                    description: "Research the latest trends in AI agents"
+                    status: "running"
+                    priority: "normal"
+                    agentId: "agent-001"
+                    retries: 3
+                    retryCount: 0
+                    tags: ["research", "ai"]
+                    metadata: {}
+                    createdAt: "2024-01-15T10:30:00Z"
+                    updatedAt: "2024-01-15T10:30:05Z"
+                    startedAt: "2024-01-15T10:30:05Z"
+                total: 150
+                page: 1
+                perPage: 20
+                totalPages: 8
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags:
+        - Tasks
+      summary: Create a task
+      description: Create and queue a new task for execution.
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+            example:
+              name: "Research AI Trends"
+              description: "Research the latest trends in AI agents and summarize key findings"
+              priority: "normal"
+              agentId: "agent-001"
+              input:
+                data:
+                  domain: "technology"
+                  depth: "comprehensive"
+                parameters:
+                  output_format: "markdown"
+                  max_sources: 10
+              timeoutSeconds: 300
+              retries: 3
+              tags: ["research", "ai"]
+              metadata:
+                requestedBy: "user@example.com"
+      responses:
+        '201':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              example:
+                id: "550e8400-e29b-41d4-a716-446655440000"
+                name: "Research AI Trends"
+                description: "Research the latest trends in AI agents and summarize key findings"
+                status: "pending"
+                priority: "normal"
+                agentId: "agent-001"
+                input:
+                  data:
+                    domain: "technology"
+                    depth: "comprehensive"
+                  parameters:
+                    output_format: "markdown"
+                    max_sources: 10
+                timeoutSeconds: 300
+                retries: 3
+                retryCount: 0
+                tags: ["research", "ai"]
+                metadata:
+                  requestedBy: "user@example.com"
+                createdAt: "2024-01-15T10:30:00Z"
+                updatedAt: "2024-01-15T10:30:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tasks/{taskId}:
+    get:
+      tags:
+        - Tasks
+      summary: Get a task
+      description: Retrieve detailed information about a specific task.
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/TaskIdParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              example:
+                id: "550e8400-e29b-41d4-a716-446655440000"
+                name: "Research AI Trends"
+                description: "Research the latest trends in AI agents"
+                status: "completed"
+                priority: "normal"
+                agentId: "agent-001"
+                input:
+                  data:
+                    domain: "technology"
+                output:
+                  result: "## AI Agent Trends 2024\n\n1. Multi-agent systems..."
+                  artifacts: ["report.md", "sources.json"]
+                  metrics:
+                    tokens_used: 8542
+                    sources_analyzed: 12
+                timeoutSeconds: 300
+                retries: 3
+                retryCount: 0
+                tags: ["research", "ai"]
+                metadata: {}
+                createdAt: "2024-01-15T10:30:00Z"
+                updatedAt: "2024-01-15T10:32:15Z"
+                startedAt: "2024-01-15T10:30:05Z"
+                completedAt: "2024-01-15T10:32:15Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      tags:
+        - Tasks
+      summary: Update a task
+      description: Update an existing task. Only pending tasks can be fully updated.
+      operationId: updateTask
+      parameters:
+        - $ref: '#/components/parameters/TaskIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdate'
+            example:
+              name: "Updated Research Task"
+              priority: "high"
+              tags: ["research", "ai", "urgent"]
+      responses:
+        '200':
+          description: Task updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - Tasks
+      summary: Delete a task
+      description: Delete a task. Only pending or completed tasks can be deleted.
+      operationId: deleteTask
+      parameters:
+        - $ref: '#/components/parameters/TaskIdParam'
+      responses:
+        '204':
+          description: Task deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tasks/{taskId}/cancel:
+    post:
+      tags:
+        - Tasks
+      summary: Cancel a task
+      description: Cancel a pending or running task.
+      operationId: cancelTask
+      parameters:
+        - $ref: '#/components/parameters/TaskIdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Reason for cancellation
+                  maxLength: 500
+              example:
+                reason: "No longer needed"
+      responses:
+        '200':
+          description: Task cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              example:
+                id: "550e8400-e29b-41d4-a716-446655440000"
+                name: "Research AI Trends"
+                status: "cancelled"
+                priority: "normal"
+                createdAt: "2024-01-15T10:30:00Z"
+                updatedAt: "2024-01-15T10:31:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Task cannot be cancelled (already completed or cancelled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tasks/{taskId}/retry:
+    post:
+      tags:
+        - Tasks
+      summary: Retry a task
+      description: Retry a failed or cancelled task. Creates a new task instance with the same configuration.
+      operationId: retryTask
+      parameters:
+        - $ref: '#/components/parameters/TaskIdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                overrides:
+                  type: object
+                  description: Override specific task parameters for the retry
+                  additionalProperties: true
+              example:
+                overrides:
+                  timeoutSeconds: 600
+                  retries: 5
+      responses:
+        '200':
+          description: Task retry initiated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              example:
+                id: "660e8400-e29b-41d4-a716-446655440000"
+                name: "Research AI Trends"
+                status: "pending"
+                priority: "normal"
+                metadata:
+                  originalTaskId: "550e8400-e29b-41d4-a716-446655440000"
+                  retryOf: "550e8400-e29b-41d4-a716-446655440000"
+                createdAt: "2024-01-15T10:35:00Z"
+                updatedAt: "2024-01-15T10:35:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Task cannot be retried (not in failed or cancelled state)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tasks/{taskId}/pause:
+    post:
+      tags:
+        - Tasks
+      summary: Pause a task
+      description: Pause a running task. The task can be resumed later.
+      operationId: pauseTask
+      parameters:
+        - $ref: '#/components/parameters/TaskIdParam'
+      responses:
+        '200':
+          description: Task paused successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              example:
+                id: "550e8400-e29b-41d4-a716-446655440000"
+                name: "Research AI Trends"
+                status: "paused"
+                createdAt: "2024-01-15T10:30:00Z"
+                updatedAt: "2024-01-15T10:31:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Task cannot be paused (not running)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tasks/{taskId}/resume:
+    post:
+      tags:
+        - Tasks
+      summary: Resume a task
+      description: Resume a paused task.
+      operationId: resumeTask
+      parameters:
+        - $ref: '#/components/parameters/TaskIdParam'
+      responses:
+        '200':
+          description: Task resumed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              example:
+                id: "550e8400-e29b-41d4-a716-446655440000"
+                name: "Research AI Trends"
+                status: "running"
+                createdAt: "2024-01-15T10:30:00Z"
+                updatedAt: "2024-01-15T10:32:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Task cannot be resumed (not paused)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ============================================================================
+  # Agents
+  # ============================================================================
+  /agents:
+    get:
+      tags:
+        - Agents
+      summary: List agents
+      description: Retrieve a paginated list of registered agents.
+      operationId: listAgents
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - name: status
+          in: query
+          description: Filter by agent status
+          schema:
+            $ref: '#/components/schemas/AgentStatus'
+        - name: tags
+          in: query
+          description: Filter by tags (comma-separated)
+          schema:
+            type: string
+        - name: capability
+          in: query
+          description: Filter by capability name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentList'
+              example:
+                items:
+                  - id: "agent-001"
+                    name: "Research Agent"
+                    description: "Specialized in research tasks"
+                    status: "busy"
+                    capabilities:
+                      - name: "web_search"
+                        version: "1.0"
+                      - name: "text_analysis"
+                        version: "2.0"
+                    maxConcurrentTasks: 5
+                    currentTasks: 3
+                    totalTasksCompleted: 150
+                    tags: ["research", "general"]
+                    metadata: {}
+                    lastHeartbeat: "2024-01-15T10:30:00Z"
+                    createdAt: "2024-01-01T00:00:00Z"
+                    updatedAt: "2024-01-15T10:30:00Z"
+                total: 25
+                page: 1
+                perPage: 20
+                totalPages: 2
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags:
+        - Agents
+      summary: Register an agent
+      description: Register a new agent in the system.
+      operationId: createAgent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentCreate'
+            example:
+              name: "Research Agent"
+              description: "Specialized agent for research and analysis tasks"
+              capabilities:
+                - name: "web_search"
+                  version: "1.0"
+                  parameters:
+                    max_results: 100
+                - name: "text_analysis"
+                  version: "2.0"
+              maxConcurrentTasks: 5
+              tags: ["research", "analysis"]
+              metadata:
+                model: "gpt-4o"
+                region: "us-west-2"
+      responses:
+        '201':
+          description: Agent registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /agents/{agentId}:
+    get:
+      tags:
+        - Agents
+      summary: Get an agent
+      description: Retrieve detailed information about a specific agent.
+      operationId: getAgent
+      parameters:
+        - $ref: '#/components/parameters/AgentIdParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+              example:
+                id: "agent-001"
+                name: "Research Agent"
+                description: "Specialized in research tasks"
+                status: "busy"
+                capabilities:
+                  - name: "web_search"
+                    version: "1.0"
+                  - name: "text_analysis"
+                    version: "2.0"
+                maxConcurrentTasks: 5
+                currentTasks: 3
+                totalTasksCompleted: 150
+                tags: ["research", "general"]
+                metadata:
+                  model: "gpt-4o"
+                lastHeartbeat: "2024-01-15T10:30:00Z"
+                createdAt: "2024-01-01T00:00:00Z"
+                updatedAt: "2024-01-15T10:30:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      tags:
+        - Agents
+      summary: Update an agent
+      description: Update an existing agent's configuration.
+      operationId: updateAgent
+      parameters:
+        - $ref: '#/components/parameters/AgentIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentUpdate'
+            example:
+              name: "Updated Research Agent"
+              maxConcurrentTasks: 10
+              tags: ["research", "priority"]
+      responses:
+        '200':
+          description: Agent updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - Agents
+      summary: Delete an agent
+      description: Remove an agent from the system. Agent must be idle with no assigned tasks.
+      operationId: deleteAgent
+      parameters:
+        - $ref: '#/components/parameters/AgentIdParam'
+      responses:
+        '204':
+          description: Agent deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Agent cannot be deleted (has active tasks)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /agents/{agentId}/pause:
+    post:
+      tags:
+        - Agents
+      summary: Pause an agent
+      description: Pause an agent. The agent will complete current tasks but won't accept new ones.
+      operationId: pauseAgent
+      parameters:
+        - $ref: '#/components/parameters/AgentIdParam'
+      responses:
+        '200':
+          description: Agent paused successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Agent cannot be paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /agents/{agentId}/resume:
+    post:
+      tags:
+        - Agents
+      summary: Resume an agent
+      description: Resume a paused agent to accept new tasks.
+      operationId: resumeAgent
+      parameters:
+        - $ref: '#/components/parameters/AgentIdParam'
+      responses:
+        '200':
+          description: Agent resumed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Agent cannot be resumed (not paused)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ============================================================================
+  # DAGs
+  # ============================================================================
+  /dags:
+    get:
+      tags:
+        - DAGs
+      summary: List DAGs
+      description: Retrieve a paginated list of DAG workflows.
+      operationId: listDAGs
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - name: status
+          in: query
+          description: Filter by DAG status
+          schema:
+            $ref: '#/components/schemas/DAGStatus'
+        - name: tags
+          in: query
+          description: Filter by tags (comma-separated)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DAGList'
+              example:
+                items:
+                  - id: "dag-550e8400-e29b-41d4-a716-446655440000"
+                    name: "Research Pipeline"
+                    description: "Multi-stage research and analysis workflow"
+                    status: "running"
+                    nodes:
+                      - id: "research"
+                        taskTemplate:
+                          name: "Research"
+                          priority: "normal"
+                        dependsOn: []
+                      - id: "analyze"
+                        taskTemplate:
+                          name: "Analyze"
+                          priority: "normal"
+                        dependsOn: ["research"]
+                    edges:
+                      - source: "research"
+                        target: "analyze"
+                    tags: ["research", "pipeline"]
+                    createdAt: "2024-01-15T10:30:00Z"
+                    updatedAt: "2024-01-15T10:30:05Z"
+                total: 10
+                page: 1
+                perPage: 20
+                totalPages: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags:
+        - DAGs
+      summary: Create a DAG
+      description: Create a new DAG workflow definition.
+      operationId: createDAG
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DAGCreate'
+            example:
+              name: "Research Pipeline"
+              description: "Multi-stage research and analysis workflow"
+              nodes:
+                - id: "research"
+                  taskTemplate:
+                    name: "Research"
+                    description: "Research the topic"
+                    priority: "normal"
+                    timeoutSeconds: 300
+                  dependsOn: []
+                - id: "analyze"
+                  taskTemplate:
+                    name: "Analyze"
+                    description: "Analyze research findings"
+                    priority: "normal"
+                  dependsOn: ["research"]
+                - id: "report"
+                  taskTemplate:
+                    name: "Report"
+                    description: "Generate final report"
+                    priority: "normal"
+                  dependsOn: ["analyze"]
+              edges:
+                - source: "research"
+                  target: "analyze"
+                - source: "analyze"
+                  target: "report"
+              tags: ["research", "pipeline"]
+              schedule: "0 9 * * 1"
+      responses:
+        '201':
+          description: DAG created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DAG'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /dags/{dagId}:
+    get:
+      tags:
+        - DAGs
+      summary: Get a DAG
+      description: Retrieve detailed information about a specific DAG.
+      operationId: getDAG
+      parameters:
+        - $ref: '#/components/parameters/DAGIdParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DAG'
+              example:
+                id: "dag-550e8400-e29b-41d4-a716-446655440000"
+                name: "Research Pipeline"
+                description: "Multi-stage research and analysis workflow"
+                status: "running"
+                nodes:
+                  - id: "research"
+                    taskTemplate:
+                      name: "Research"
+                      priority: "normal"
+                    dependsOn: []
+                  - id: "analyze"
+                    taskTemplate:
+                      name: "Analyze"
+                      priority: "normal"
+                    dependsOn: ["research"]
+                  - id: "report"
+                    taskTemplate:
+                      name: "Report"
+                      priority: "normal"
+                    dependsOn: ["analyze"]
+                edges:
+                  - source: "research"
+                    target: "analyze"
+                  - source: "analyze"
+                    target: "report"
+                input:
+                  topic: "AI Trends"
+                output: {}
+                taskStatuses:
+                  - nodeId: "research"
+                    taskId: "task-001"
+                    status: "completed"
+                    startedAt: "2024-01-15T10:30:05Z"
+                    completedAt: "2024-01-15T10:31:00Z"
+                  - nodeId: "analyze"
+                    taskId: "task-002"
+                    status: "running"
+                    startedAt: "2024-01-15T10:31:05Z"
+                  - nodeId: "report"
+                    status: "pending"
+                tags: ["research", "pipeline"]
+                createdAt: "2024-01-15T10:30:00Z"
+                updatedAt: "2024-01-15T10:31:05Z"
+                startedAt: "2024-01-15T10:30:05Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      tags:
+        - DAGs
+      summary: Update a DAG
+      description: Update an existing DAG definition. Only pending DAGs can be fully updated.
+      operationId: updateDAG
+      parameters:
+        - $ref: '#/components/parameters/DAGIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DAGUpdate'
+            example:
+              name: "Updated Research Pipeline"
+              description: "Improved workflow"
+              tags: ["research", "pipeline", "v2"]
+      responses:
+        '200':
+          description: DAG updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DAG'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - DAGs
+      summary: Delete a DAG
+      description: Delete a DAG definition. Running DAGs must be stopped first.
+      operationId: deleteDAG
+      parameters:
+        - $ref: '#/components/parameters/DAGIdParam'
+      responses:
+        '204':
+          description: DAG deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: DAG cannot be deleted (currently running)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /dags/{dagId}/start:
+    post:
+      tags:
+        - DAGs
+      summary: Start a DAG
+      description: Start execution of a DAG workflow.
+      operationId: startDAG
+      parameters:
+        - $ref: '#/components/parameters/DAGIdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input:
+                  type: object
+                  description: Input data for the DAG execution
+                  additionalProperties: true
+              example:
+                input:
+                  topic: "Artificial Intelligence Trends 2024"
+                  depth: "comprehensive"
+      responses:
+        '200':
+          description: DAG started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DAG'
+              example:
+                id: "dag-550e8400-e29b-41d4-a716-446655440000"
+                name: "Research Pipeline"
+                status: "running"
+                startedAt: "2024-01-15T10:30:05Z"
+                createdAt: "2024-01-15T10:30:00Z"
+                updatedAt: "2024-01-15T10:30:05Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: DAG cannot be started (already running or completed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /dags/{dagId}/stop:
+    post:
+      tags:
+        - DAGs
+      summary: Stop a DAG
+      description: Stop a running DAG and cancel all pending tasks.
+      operationId: stopDAG
+      parameters:
+        - $ref: '#/components/parameters/DAGIdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Reason for stopping the DAG
+                  maxLength: 500
+              example:
+                reason: "Manual intervention required"
+      responses:
+        '200':
+          description: DAG stopped successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DAG'
+              example:
+                id: "dag-550e8400-e29b-41d4-a716-446655440000"
+                name: "Research Pipeline"
+                status: "cancelled"
+                createdAt: "2024-01-15T10:30:00Z"
+                updatedAt: "2024-01-15T10:35:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: DAG cannot be stopped (not running)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /dags/{dagId}/pause:
+    post:
+      tags:
+        - DAGs
+      summary: Pause a DAG
+      description: Pause a running DAG. Tasks in progress will complete but no new tasks will start.
+      operationId: pauseDAG
+      parameters:
+        - $ref: '#/components/parameters/DAGIdParam'
+      responses:
+        '200':
+          description: DAG paused successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DAG'
+              example:
+                id: "dag-550e8400-e29b-41d4-a716-446655440000"
+                name: "Research Pipeline"
+                status: "paused"
+                createdAt: "2024-01-15T10:30:00Z"
+                updatedAt: "2024-01-15T10:32:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: DAG cannot be paused (not running)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /dags/{dagId}/resume:
+    post:
+      tags:
+        - DAGs
+      summary: Resume a DAG
+      description: Resume a paused DAG to continue execution.
+      operationId: resumeDAG
+      parameters:
+        - $ref: '#/components/parameters/DAGIdParam'
+      responses:
+        '200':
+          description: DAG resumed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DAG'
+              example:
+                id: "dag-550e8400-e29b-41d4-a716-446655440000"
+                name: "Research Pipeline"
+                status: "running"
+                createdAt: "2024-01-15T10:30:00Z"
+                updatedAt: "2024-01-15T10:33:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: DAG cannot be resumed (not paused)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ============================================================================
+  # Approvals
+  # ============================================================================
+  /approvals:
+    get:
+      tags:
+        - Approvals
+      summary: List approvals
+      description: Retrieve a paginated list of approval requests.
+      operationId: listApprovals
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - name: status
+          in: query
+          description: Filter by approval status
+          schema:
+            $ref: '#/components/schemas/ApprovalStatus'
+        - name: taskId
+          in: query
+          description: Filter by associated task ID
+          schema:
+            type: string
+            format: uuid
+        - name: type
+          in: query
+          description: Filter by approval type
+          schema:
+            $ref: '#/components/schemas/ApprovalType'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalList'
+              example:
+                items:
+                  - id: "approval-001"
+                    taskId: "550e8400-e29b-41d4-a716-446655440000"
+                    status: "pending"
+                    type: "manual"
+                    description: "Approve high-cost API call"
+                    requiredApprovers: ["admin@example.com"]
+                    approvers: []
+                    expiresAt: "2024-01-15T11:30:00Z"
+                    metadata:
+                      estimatedCost: 50.00
+                      action: "external_api_call"
+                    createdAt: "2024-01-15T10:30:00Z"
+                    updatedAt: "2024-01-15T10:30:00Z"
+                total: 5
+                page: 1
+                perPage: 20
+                totalPages: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags:
+        - Approvals
+      summary: Create an approval request
+      description: Create a new approval request for a task action.
+      operationId: createApproval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalCreate'
+            example:
+              taskId: "550e8400-e29b-41d4-a716-446655440000"
+              type: "manual"
+              description: "Approve payment processing of $500"
+              requiredApprovers: ["finance@example.com", "manager@example.com"]
+              expiresAt: "2024-01-15T12:00:00Z"
+              metadata:
+                amount: 500.00
+                currency: "USD"
+                vendor: "Example Corp"
+      responses:
+        '201':
+          description: Approval created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Associated task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /approvals/{approvalId}:
+    get:
+      tags:
+        - Approvals
+      summary: Get an approval
+      description: Retrieve detailed information about a specific approval request.
+      operationId: getApproval
+      parameters:
+        - $ref: '#/components/parameters/ApprovalIdParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
+              example:
+                id: "approval-001"
+                taskId: "550e8400-e29b-41d4-a716-446655440000"
+                status: "pending"
+                type: "manual"
+                description: "Approve high-cost API call"
+                requiredApprovers: ["admin@example.com"]
+                approvers: []
+                expiresAt: "2024-01-15T11:30:00Z"
+                metadata:
+                  estimatedCost: 50.00
+                  action: "external_api_call"
+                createdAt: "2024-01-15T10:30:00Z"
+                updatedAt: "2024-01-15T10:30:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /approvals/{approvalId}/respond:
+    post:
+      tags:
+        - Approvals
+      summary: Respond to an approval
+      description: Approve or reject an approval request.
+      operationId: respondToApproval
+      parameters:
+        - $ref: '#/components/parameters/ApprovalIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecision'
+            examples:
+              approve:
+                summary: Approve the request
+                value:
+                  status: "approved"
+                  approverId: "admin@example.com"
+                  comment: "Approved - within budget"
+              reject:
+                summary: Reject the request
+                value:
+                  status: "rejected"
+                  approverId: "admin@example.com"
+                  comment: "Rejected - exceeds quarterly budget"
+      responses:
+        '200':
+          description: Approval decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
+              example:
+                id: "approval-001"
+                taskId: "550e8400-e29b-41d4-a716-446655440000"
+                status: "approved"
+                type: "manual"
+                description: "Approve high-cost API call"
+                requiredApprovers: ["admin@example.com"]
+                approvers: ["admin@example.com"]
+                decidedAt: "2024-01-15T10:35:00Z"
+                comment: "Approved - within budget"
+                createdAt: "2024-01-15T10:30:00Z"
+                updatedAt: "2024-01-15T10:35:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: User not authorized to respond to this approval
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Approval cannot be responded to (already decided or expired)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ============================================================================
+  # Health
+  # ============================================================================
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Basic health check endpoint. Returns service status and version.
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: "healthy"
+                version: "1.0.0"
+                uptime: 86400.5
+                services:
+                  database: "healthy"
+                  redis: "healthy"
+                  agents: "healthy"
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: "unhealthy"
+                version: "1.0.0"
+                uptime: 86400.5
+                services:
+                  database: "healthy"
+                  redis: "unhealthy"
+                  agents: "healthy"
+
+  /health/ready:
+    get:
+      tags:
+        - Health
+      summary: Readiness check
+      description: Check if the service is ready to accept traffic. Verifies all dependencies.
+      operationId: readinessCheck
+      security: []
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ready:
+                    type: boolean
+                  checks:
+                    type: object
+                    additionalProperties:
+                      type: string
+              example:
+                ready: true
+                checks:
+                  database: "ok"
+                  redis: "ok"
+                  agents: "ok"
+        '503':
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ready:
+                    type: boolean
+                  checks:
+                    type: object
+                    additionalProperties:
+                      type: string
+              example:
+                ready: false
+                checks:
+                  database: "ok"
+                  redis: "connection failed"
+                  agents: "ok"
+
+  /health/live:
+    get:
+      tags:
+        - Health
+      summary: Liveness check
+      description: Check if the service is alive. Used by container orchestrators for restart decisions.
+      operationId: livenessCheck
+      security: []
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alive:
+                    type: boolean
+              example:
+                alive: true
+        '503':
+          description: Service is not alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alive:
+                    type: boolean
+              example:
+                alive: false
+
+  # ============================================================================
+  # Metrics
+  # ============================================================================
+  /metrics:
+    get:
+      tags:
+        - Metrics
+      summary: Get Prometheus metrics
+      description: Returns metrics in Prometheus format for scraping.
+      operationId: getPrometheusMetrics
+      security: []
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP apex_tasks_total Total number of tasks
+                # TYPE apex_tasks_total counter
+                apex_tasks_total{status="completed"} 1250
+                apex_tasks_total{status="failed"} 15
+                apex_tasks_total{status="running"} 45
+                # HELP apex_agents_active Number of active agents
+                # TYPE apex_agents_active gauge
+                apex_agents_active 20
+
+  /metrics/system:
+    get:
+      tags:
+        - Metrics
+      summary: Get system metrics
+      description: Returns current system-wide metrics in JSON format.
+      operationId: getSystemMetrics
+      responses:
+        '200':
+          description: System metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemMetrics'
+              example:
+                agents:
+                  total: 50
+                  active: 45
+                  idle: 3
+                  paused: 2
+                  offline: 0
+                tasks:
+                  pending: 120
+                  running: 45
+                  completedToday: 850
+                  failedToday: 12
+                  successRate: 0.986
+                resources:
+                  tokensUsedToday: 15000000
+                  costToday: 150.25
+                  apiCallsToday: 25000
+                performance:
+                  avgTaskLatencyMs: 3500
+                  p95TaskLatencyMs: 8000
+                  p99TaskLatencyMs: 15000
+                  throughputPerMinute: 45
+                timestamp: "2024-01-15T10:30:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /metrics/timeseries:
+    get:
+      tags:
+        - Metrics
+      summary: Get time series metrics
+      description: Returns historical metrics data for charting and analysis.
+      operationId: getTimeSeriesMetrics
+      parameters:
+        - name: metric
+          in: query
+          required: true
+          description: Metric name to retrieve
+          schema:
+            type: string
+            enum:
+              - task_completions
+              - task_failures
+              - tokens_used
+              - cost
+              - latency
+              - agent_utilization
+              - throughput
+        - name: interval
+          in: query
+          required: true
+          description: Aggregation interval
+          schema:
+            type: string
+            enum: ["1m", "5m", "15m", "1h", "1d"]
+        - name: from
+          in: query
+          required: true
+          description: Start time (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: End time (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Time series metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeSeriesMetrics'
+              example:
+                metric: "task_completions"
+                interval: "1h"
+                data:
+                  - timestamp: "2024-01-14T00:00:00Z"
+                    value: 42
+                  - timestamp: "2024-01-14T01:00:00Z"
+                    value: 38
+                  - timestamp: "2024-01-14T02:00:00Z"
+                    value: 35
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+# ============================================================================
+# Components
+# ============================================================================
+components:
+  # --------------------------------------------------------------------------
+  # Security Schemes
+  # --------------------------------------------------------------------------
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT Bearer token authentication.
+
+        Include the token in the Authorization header:
+        ```
+        Authorization: Bearer <your-token>
+        ```
+
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        API Key authentication.
+
+        Include your API key in the X-API-Key header:
+        ```
+        X-API-Key: <your-api-key>
+        ```
+
+  # --------------------------------------------------------------------------
+  # Parameters
+  # --------------------------------------------------------------------------
+  parameters:
+    TaskIdParam:
+      name: taskId
+      in: path
+      required: true
+      description: Unique task identifier
+      schema:
+        type: string
+        format: uuid
+      example: "550e8400-e29b-41d4-a716-446655440000"
+
+    AgentIdParam:
+      name: agentId
+      in: path
+      required: true
+      description: Unique agent identifier
+      schema:
+        type: string
+      example: "agent-001"
+
+    DAGIdParam:
+      name: dagId
+      in: path
+      required: true
+      description: Unique DAG identifier
+      schema:
+        type: string
+        format: uuid
+      example: "dag-550e8400-e29b-41d4-a716-446655440000"
+
+    ApprovalIdParam:
+      name: approvalId
+      in: path
+      required: true
+      description: Unique approval identifier
+      schema:
+        type: string
+      example: "approval-001"
+
+    PageParam:
+      name: page
+      in: query
+      description: Page number (1-indexed)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    PerPageParam:
+      name: perPage
+      in: query
+      description: Number of items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    SortByParam:
+      name: sortBy
+      in: query
+      description: Field to sort by
+      schema:
+        type: string
+        enum: [createdAt, updatedAt, name, status, priority]
+
+    SortOrderParam:
+      name: sortOrder
+      in: query
+      description: Sort order
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: asc
+
+  # --------------------------------------------------------------------------
+  # Schemas
+  # --------------------------------------------------------------------------
+  schemas:
+    # Enums
+    TaskStatus:
+      type: string
+      enum: [pending, queued, running, paused, completed, failed, cancelled]
+      description: Task execution status
+
+    TaskPriority:
+      type: string
+      enum: [low, normal, high, critical]
+      description: Task priority level
+
+    AgentStatus:
+      type: string
+      enum: [idle, busy, offline, error]
+      description: Agent status
+
+    DAGStatus:
+      type: string
+      enum: [pending, running, completed, failed, cancelled, paused]
+      description: DAG execution status
+
+    ApprovalStatus:
+      type: string
+      enum: [pending, approved, rejected, expired]
+      description: Approval status
+
+    ApprovalType:
+      type: string
+      enum: [manual, auto, conditional]
+      description: Approval type
+
+    # Task Schemas
+    TaskInput:
+      type: object
+      description: Input data for a task
+      properties:
+        data:
+          type: object
+          description: Input data map
+          additionalProperties: true
+        files:
+          type: array
+          description: List of file paths or URLs
+          items:
+            type: string
+        parameters:
+          type: object
+          description: Execution parameters
+          additionalProperties: true
+
+    TaskOutput:
+      type: object
+      description: Output data from a task
+      properties:
+        result:
+          description: Primary result of the task
+        artifacts:
+          type: array
+          description: List of generated artifact paths
+          items:
+            type: string
+        metrics:
+          type: object
+          description: Execution metrics
+          additionalProperties: true
+
+    TaskError:
+      type: object
+      description: Task error information
+      properties:
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Error message
+        details:
+          type: object
+          description: Additional error details
+          additionalProperties: true
+        stackTrace:
+          type: string
+          description: Stack trace (if available)
+
+    TaskCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Task name
+        description:
+          type: string
+          description: Task description
+        agentId:
+          type: string
+          description: Assign to specific agent
+        priority:
+          $ref: '#/components/schemas/TaskPriority'
+        input:
+          $ref: '#/components/schemas/TaskInput'
+        timeoutSeconds:
+          type: integer
+          minimum: 0
+          description: Task timeout in seconds
+        retries:
+          type: integer
+          minimum: 0
+          maximum: 10
+          default: 0
+          description: Maximum retry attempts
+        tags:
+          type: array
+          items:
+            type: string
+          description: Tags for categorization
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Custom metadata
+        dagId:
+          type: string
+          description: Parent DAG ID (if part of a workflow)
+        dependsOn:
+          type: array
+          items:
+            type: string
+          description: Task IDs this task depends on
+
+    TaskUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        priority:
+          $ref: '#/components/schemas/TaskPriority'
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        input:
+          $ref: '#/components/schemas/TaskInput'
+        output:
+          $ref: '#/components/schemas/TaskOutput'
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    Task:
+      type: object
+      required:
+        - id
+        - name
+        - status
+        - priority
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique task identifier
+        name:
+          type: string
+          description: Task name
+        description:
+          type: string
+          description: Task description
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        priority:
+          $ref: '#/components/schemas/TaskPriority'
+        agentId:
+          type: string
+          description: Assigned agent ID
+        input:
+          $ref: '#/components/schemas/TaskInput'
+        output:
+          $ref: '#/components/schemas/TaskOutput'
+        error:
+          $ref: '#/components/schemas/TaskError'
+        timeoutSeconds:
+          type: integer
+          description: Task timeout in seconds
+        retries:
+          type: integer
+          description: Maximum retry attempts
+        retryCount:
+          type: integer
+          description: Current retry count
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        dagId:
+          type: string
+          description: Parent DAG ID
+        dependsOn:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    TaskList:
+      type: object
+      required:
+        - items
+        - total
+        - page
+        - perPage
+        - totalPages
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+        total:
+          type: integer
+          description: Total number of items
+        page:
+          type: integer
+          description: Current page number
+        perPage:
+          type: integer
+          description: Items per page
+        totalPages:
+          type: integer
+          description: Total number of pages
+
+    # Agent Schemas
+    AgentCapability:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Capability name
+        version:
+          type: string
+          description: Capability version
+        parameters:
+          type: object
+          additionalProperties: true
+          description: Capability-specific parameters
+
+    AgentCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Agent name
+        description:
+          type: string
+          description: Agent description
+        capabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentCapability'
+        maxConcurrentTasks:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 1
+          description: Maximum concurrent tasks
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    AgentUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/AgentStatus'
+        capabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentCapability'
+        maxConcurrentTasks:
+          type: integer
+          minimum: 1
+          maximum: 100
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    Agent:
+      type: object
+      required:
+        - id
+        - name
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          description: Unique agent identifier
+        name:
+          type: string
+          description: Agent name
+        description:
+          type: string
+          description: Agent description
+        status:
+          $ref: '#/components/schemas/AgentStatus'
+        capabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentCapability'
+        maxConcurrentTasks:
+          type: integer
+          description: Maximum concurrent tasks
+        currentTasks:
+          type: integer
+          description: Current number of assigned tasks
+        totalTasksCompleted:
+          type: integer
+          description: Total tasks completed by this agent
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        lastHeartbeat:
+          type: string
+          format: date-time
+          description: Last heartbeat timestamp
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AgentList:
+      type: object
+      required:
+        - items
+        - total
+        - page
+        - perPage
+        - totalPages
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Agent'
+        total:
+          type: integer
+        page:
+          type: integer
+        perPage:
+          type: integer
+        totalPages:
+          type: integer
+
+    # DAG Schemas
+    DAGNode:
+      type: object
+      required:
+        - id
+        - taskTemplate
+      properties:
+        id:
+          type: string
+          description: Node identifier within the DAG
+        taskTemplate:
+          $ref: '#/components/schemas/TaskCreate'
+        dependsOn:
+          type: array
+          items:
+            type: string
+          description: Node IDs this node depends on
+        condition:
+          type: string
+          description: Conditional expression for execution
+        retryPolicy:
+          type: object
+          properties:
+            maxRetries:
+              type: integer
+            backoffMultiplier:
+              type: number
+            initialDelaySeconds:
+              type: integer
+
+    DAGEdge:
+      type: object
+      required:
+        - source
+        - target
+      properties:
+        source:
+          type: string
+          description: Source node ID
+        target:
+          type: string
+          description: Target node ID
+        condition:
+          type: string
+          description: Conditional expression for this edge
+
+    DAGTaskStatus:
+      type: object
+      required:
+        - nodeId
+        - status
+      properties:
+        nodeId:
+          type: string
+          description: Node ID in the DAG
+        taskId:
+          type: string
+          description: Associated task ID
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    DAGCreate:
+      type: object
+      required:
+        - name
+        - nodes
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: DAG name
+        description:
+          type: string
+          description: DAG description
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DAGNode'
+          minItems: 1
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/DAGEdge'
+        input:
+          type: object
+          additionalProperties: true
+          description: Default input data
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        schedule:
+          type: string
+          description: Cron expression for scheduled execution
+          example: "0 9 * * 1"
+
+    DAGUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DAGNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/DAGEdge'
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        schedule:
+          type: string
+
+    DAG:
+      type: object
+      required:
+        - id
+        - name
+        - status
+        - nodes
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          description: Unique DAG identifier
+        name:
+          type: string
+          description: DAG name
+        description:
+          type: string
+          description: DAG description
+        status:
+          $ref: '#/components/schemas/DAGStatus'
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DAGNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/DAGEdge'
+        input:
+          type: object
+          additionalProperties: true
+        output:
+          type: object
+          additionalProperties: true
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        schedule:
+          type: string
+        taskStatuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/DAGTaskStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    DAGList:
+      type: object
+      required:
+        - items
+        - total
+        - page
+        - perPage
+        - totalPages
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DAG'
+        total:
+          type: integer
+        page:
+          type: integer
+        perPage:
+          type: integer
+        totalPages:
+          type: integer
+
+    # Approval Schemas
+    ApprovalCreate:
+      type: object
+      required:
+        - taskId
+      properties:
+        taskId:
+          type: string
+          format: uuid
+          description: Associated task ID
+        type:
+          $ref: '#/components/schemas/ApprovalType'
+        description:
+          type: string
+          description: Approval request description
+        requiredApprovers:
+          type: array
+          items:
+            type: string
+          description: List of required approver IDs
+        expiresAt:
+          type: string
+          format: date-time
+          description: Expiration timestamp
+        metadata:
+          type: object
+          additionalProperties: true
+
+    ApprovalDecision:
+      type: object
+      required:
+        - status
+        - approverId
+      properties:
+        status:
+          type: string
+          enum: [approved, rejected]
+          description: Approval decision
+        approverId:
+          type: string
+          description: ID of the approver making the decision
+        comment:
+          type: string
+          description: Optional comment explaining the decision
+
+    Approval:
+      type: object
+      required:
+        - id
+        - taskId
+        - status
+        - type
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          description: Unique approval identifier
+        taskId:
+          type: string
+          description: Associated task ID
+        status:
+          $ref: '#/components/schemas/ApprovalStatus'
+        type:
+          $ref: '#/components/schemas/ApprovalType'
+        description:
+          type: string
+        requiredApprovers:
+          type: array
+          items:
+            type: string
+        approvers:
+          type: array
+          items:
+            type: string
+          description: Approvers who have responded
+        expiresAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: string
+          format: date-time
+        comment:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ApprovalList:
+      type: object
+      required:
+        - items
+        - total
+        - page
+        - perPage
+        - totalPages
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Approval'
+        total:
+          type: integer
+        page:
+          type: integer
+        perPage:
+          type: integer
+        totalPages:
+          type: integer
+
+    # Health and Metrics Schemas
+    HealthStatus:
+      type: object
+      required:
+        - status
+        - version
+        - uptime
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy, degraded]
+        version:
+          type: string
+          description: API version
+        uptime:
+          type: number
+          description: Uptime in seconds
+        services:
+          type: object
+          additionalProperties:
+            type: string
+          description: Status of dependent services
+
+    SystemMetrics:
+      type: object
+      properties:
+        agents:
+          type: object
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+            idle:
+              type: integer
+            paused:
+              type: integer
+            offline:
+              type: integer
+        tasks:
+          type: object
+          properties:
+            pending:
+              type: integer
+            running:
+              type: integer
+            completedToday:
+              type: integer
+            failedToday:
+              type: integer
+            successRate:
+              type: number
+              format: double
+        resources:
+          type: object
+          properties:
+            tokensUsedToday:
+              type: integer
+            costToday:
+              type: number
+              format: double
+            apiCallsToday:
+              type: integer
+        performance:
+          type: object
+          properties:
+            avgTaskLatencyMs:
+              type: integer
+            p95TaskLatencyMs:
+              type: integer
+            p99TaskLatencyMs:
+              type: integer
+            throughputPerMinute:
+              type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+    TimeSeriesMetrics:
+      type: object
+      required:
+        - metric
+        - interval
+        - data
+      properties:
+        metric:
+          type: string
+        interval:
+          type: string
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+              value:
+                type: number
+
+    # Error Schema
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Error code
+            message:
+              type: string
+              description: Human-readable error message
+            details:
+              type: object
+              additionalProperties: true
+              description: Additional error details
+            requestId:
+              type: string
+              description: Request ID for debugging
+
+    # WebSocket Schemas
+    WebSocketMessage:
+      type: object
+      required:
+        - type
+        - timestamp
+        - data
+      properties:
+        type:
+          type: string
+          enum:
+            - task.created
+            - task.updated
+            - task.completed
+            - task.failed
+            - agent.status_changed
+            - dag.started
+            - dag.completed
+            - dag.failed
+            - approval.required
+            - approval.completed
+            - log.message
+            - heartbeat
+            - error
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties: true
+
+    WebSocketSubscription:
+      type: object
+      required:
+        - events
+      properties:
+        events:
+          type: array
+          items:
+            type: string
+          description: Event types to subscribe to
+        taskIds:
+          type: array
+          items:
+            type: string
+          description: Filter by specific task IDs
+        agentIds:
+          type: array
+          items:
+            type: string
+          description: Filter by specific agent IDs
+        dagIds:
+          type: array
+          items:
+            type: string
+          description: Filter by specific DAG IDs
+
+  # --------------------------------------------------------------------------
+  # Responses
+  # --------------------------------------------------------------------------
+  responses:
+    BadRequest:
+      description: Bad request - Invalid parameters or request body
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: "BAD_REQUEST"
+              message: "Invalid request parameters"
+              details:
+                field: "name"
+                reason: "must not be empty"
+
+    Unauthorized:
+      description: Unauthorized - Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: "UNAUTHORIZED"
+              message: "Invalid or missing authentication credentials"
+
+    Forbidden:
+      description: Forbidden - Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: "FORBIDDEN"
+              message: "You do not have permission to perform this action"
+
+    NotFound:
+      description: Not found - Resource does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: "NOT_FOUND"
+              message: "Resource not found"
+              details:
+                resourceType: "Task"
+                resourceId: "550e8400-e29b-41d4-a716-446655440000"
+
+    ValidationError:
+      description: Validation error - Request body failed validation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: "VALIDATION_ERROR"
+              message: "Request validation failed"
+              details:
+                errors:
+                  - field: "name"
+                    message: "must be between 1 and 255 characters"
+                  - field: "priority"
+                    message: "must be one of: low, normal, high, critical"
+
+    RateLimitExceeded:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+          description: Request limit per window
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+          description: Remaining requests in current window
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+          description: Unix timestamp when the rate limit resets
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait before retrying
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: "RATE_LIMIT_EXCEEDED"
+              message: "Too many requests. Please retry after 60 seconds."
+              details:
+                limit: 100
+                remaining: 0
+                resetAt: "2024-01-15T10:31:00Z"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: "INTERNAL_ERROR"
+              message: "An unexpected error occurred"
+              requestId: "req-123456"
+
+# ============================================================================
+# WebSocket Documentation
+# ============================================================================
+x-websocket:
+  url: wss://api.apex.io/ws
+  description: |
+    ## WebSocket Connection
+
+    The WebSocket endpoint provides real-time updates for tasks, agents, DAGs, and approvals.
+
+    ### Connection
+
+    Connect to `wss://api.apex.io/ws` with authentication headers:
+
+    ```javascript
+    const ws = new WebSocket('wss://api.apex.io/ws', {
+      headers: {
+        'Authorization': 'Bearer <your-token>'
+        // OR
+        'X-API-Key': '<your-api-key>'
+      }
+    });
+    ```
+
+    ### Subscribing to Events
+
+    After connecting, send a subscription message:
+
+    ```json
+    {
+      "type": "subscribe",
+      "data": {
+        "events": ["task.created", "task.completed", "agent.status_changed"],
+        "taskIds": ["550e8400-e29b-41d4-a716-446655440000"],
+        "agentIds": ["agent-001"]
+      }
+    }
+    ```
+
+    ### Event Types
+
+    | Event Type | Description |
+    |------------|-------------|
+    | `task.created` | New task created |
+    | `task.updated` | Task status or data updated |
+    | `task.completed` | Task completed successfully |
+    | `task.failed` | Task execution failed |
+    | `agent.status_changed` | Agent status changed |
+    | `dag.started` | DAG execution started |
+    | `dag.completed` | DAG completed |
+    | `dag.failed` | DAG execution failed |
+    | `approval.required` | New approval request |
+    | `approval.completed` | Approval decision made |
+    | `log.message` | Log message from task execution |
+    | `heartbeat` | Connection heartbeat (every 30s) |
+    | `error` | Error message |
+
+    ### Example Messages
+
+    Task completed event:
+    ```json
+    {
+      "type": "task.completed",
+      "timestamp": "2024-01-15T10:32:15Z",
+      "data": {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "name": "Research AI Trends",
+        "status": "completed",
+        "output": {
+          "result": "..."
+        }
+      }
+    }
+    ```
+
+    Agent status changed event:
+    ```json
+    {
+      "type": "agent.status_changed",
+      "timestamp": "2024-01-15T10:32:15Z",
+      "data": {
+        "id": "agent-001",
+        "name": "Research Agent",
+        "previousStatus": "busy",
+        "status": "idle"
+      }
+    }
+    ```
+
+    Approval required event:
+    ```json
+    {
+      "type": "approval.required",
+      "timestamp": "2024-01-15T10:30:00Z",
+      "data": {
+        "id": "approval-001",
+        "taskId": "550e8400-e29b-41d4-a716-446655440000",
+        "type": "manual",
+        "description": "Approve high-cost API call",
+        "expiresAt": "2024-01-15T11:30:00Z"
+      }
+    }
+    ```
+
+    ### Reconnection
+
+    The WebSocket connection may drop due to network issues. Clients should implement
+    exponential backoff reconnection:
+
+    ```javascript
+    let reconnectDelay = 1000;
+    const maxDelay = 60000;
+
+    function reconnect() {
+      setTimeout(() => {
+        connect();
+        reconnectDelay = Math.min(reconnectDelay * 2, maxDelay);
+      }, reconnectDelay);
+    }
+    ```

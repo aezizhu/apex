@@ -1,0 +1,643 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Project Apex - Production Configuration
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# This configuration is optimized for production with:
+#   - Security hardened settings
+#   - High availability and performance tuning
+#   - Strict rate limiting
+#   - Comprehensive observability
+#   - Zero debug/development features
+#
+# IMPORTANT: Never commit secrets to this file. Use environment variables.
+#
+# Usage:
+#   APEX_CONFIG=config/production.toml ./apex-server
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ==============================================================================
+# ENVIRONMENT
+# ==============================================================================
+
+[environment]
+name = "production"
+debug = false
+log_level = "info"
+
+# ==============================================================================
+# SERVER CONFIGURATION
+# ==============================================================================
+
+[server]
+host = "0.0.0.0"
+port = 8080
+workers = 16                         # Scale based on available CPUs
+keep_alive = 75
+shutdown_timeout = 120               # Allow time for in-flight requests
+
+# Request handling
+max_request_size = "10MB"
+request_timeout = 180
+
+# TLS (mandatory in production)
+tls_enabled = true
+tls_cert_path = "/etc/apex/certs/server.crt"
+tls_key_path = "/etc/apex/certs/server.key"
+tls_min_version = "1.2"              # Minimum TLS 1.2
+tls_cipher_suites = [
+    "TLS_AES_256_GCM_SHA384",
+    "TLS_AES_128_GCM_SHA256",
+    "TLS_CHACHA20_POLY1305_SHA256",
+]
+
+[server.grpc]
+enabled = true
+port = 50051
+max_message_size = "16MB"
+reflection_enabled = false           # NEVER enable in production
+
+# Connection limits
+max_connections = 10000
+max_connections_per_ip = 100
+
+# ==============================================================================
+# DATABASE (PostgreSQL)
+# ==============================================================================
+
+[database]
+# URL set via DATABASE_URL environment variable
+url = "${DATABASE_URL}"
+
+# Connection pool - production tuned
+min_connections = 10
+max_connections = 50                 # Adjust based on DB limits
+acquire_timeout = 30
+idle_timeout = 600
+max_lifetime = 1800                  # Recycle connections every 30 min
+
+# Query settings
+statement_cache_size = 500
+log_queries = false                  # Never log queries in production
+log_slow_queries_ms = 1000           # Only log very slow queries
+
+# Migrations
+run_migrations_on_startup = false    # Always run migrations separately
+migrations_path = "./migrations"
+
+[database.ssl]
+enabled = true
+mode = "require"
+ca_cert_path = "/etc/apex/certs/db-ca.crt"
+client_cert_path = "/etc/apex/certs/db-client.crt"
+client_key_path = "/etc/apex/certs/db-client.key"
+verify_hostname = true
+
+# Read replicas for scalability
+[database.replicas]
+enabled = true
+urls = "${DATABASE_REPLICA_URLS}"    # Comma-separated list
+read_from_replicas = true
+replica_selection = "least_connections"
+
+# Failover settings
+[database.failover]
+enabled = true
+health_check_interval = 5
+max_failed_health_checks = 3
+reconnect_delay = 1
+
+# ==============================================================================
+# CACHE (Redis)
+# ==============================================================================
+
+[cache]
+enabled = true
+url = "${REDIS_URL}"
+
+# Connection pool - production sized
+pool_size = 25
+connection_timeout = 10
+
+# TTLs
+default_ttl = 3600
+session_ttl = 86400
+model_response_ttl = 7200
+
+key_prefix = "apex:prod:"
+
+# Redis Cluster for high availability
+[cache.cluster]
+enabled = true
+nodes = "${REDIS_CLUSTER_NODES}"     # Comma-separated list
+
+# Sentinel for failover
+[cache.sentinel]
+enabled = false                      # Enable if using Sentinel instead of Cluster
+# master_name = "apex-master"
+# nodes = ["sentinel-1:26379", "sentinel-2:26379", "sentinel-3:26379"]
+
+# ==============================================================================
+# MESSAGE QUEUE
+# ==============================================================================
+
+[queue]
+backend = "redis"
+url = "${REDIS_URL}"
+
+[queue.redis]
+queue_prefix = "apex:queue:prod:"
+processing_timeout = 900
+retry_attempts = 5
+retry_delay = 30
+visibility_timeout = 120
+
+# Exponential backoff for retries
+[queue.redis.backoff]
+initial_delay = 1
+max_delay = 300
+multiplier = 2
+
+[queue.queues.default]
+name = "default"
+priority = 1
+max_workers = 20
+
+[queue.queues.high_priority]
+name = "high_priority"
+priority = 10
+max_workers = 10
+
+[queue.queues.low_priority]
+name = "low_priority"
+priority = 0
+max_workers = 10
+
+[queue.queues.critical]
+name = "critical"
+priority = 100
+max_workers = 5
+
+[queue.dead_letter]
+enabled = true
+max_retries = 10
+ttl = 2592000                        # 30 days
+
+# ==============================================================================
+# OBSERVABILITY
+# ==============================================================================
+
+[observability]
+service_name = "apex-server"
+service_version = "${APEX_VERSION}"
+environment = "production"
+
+[observability.logging]
+level = "info"
+format = "json"
+output = "stdout"
+include_file_line = false
+include_target = true
+
+# Strict filtering for production
+filters = [
+    "hyper=error",
+    "tower=error",
+    "sqlx=error",
+    "tokio_postgres=error",
+    "h2=error",
+    "rustls=error",
+]
+
+[observability.logging.file]
+enabled = false                      # Use centralized log aggregation
+
+# Sensitive data redaction
+[observability.logging.redaction]
+enabled = true
+patterns = [
+    "api_key",
+    "password",
+    "secret",
+    "token",
+    "authorization",
+    "credit_card",
+    "ssn",
+]
+
+[observability.tracing]
+enabled = true
+exporter = "otlp"
+endpoint = "${OTEL_EXPORTER_OTLP_ENDPOINT}"
+sample_rate = 0.1                    # Sample 10% for cost efficiency
+propagation = "w3c"
+
+include_db_queries = false           # Don't include sensitive data
+include_http_headers = false
+include_request_body = false
+
+# Trace sampling rules
+[observability.tracing.sampling]
+# Always trace errors
+always_sample_errors = true
+# Always trace slow requests
+slow_request_threshold_ms = 5000
+always_sample_slow = true
+
+[observability.metrics]
+enabled = true
+exporter = "prometheus"
+endpoint = "/metrics"
+port = 9090
+include_process_metrics = true
+include_runtime_metrics = true
+
+[observability.metrics.histograms]
+request_duration_buckets = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+model_latency_buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0]
+
+[observability.health]
+enabled = true
+endpoint = "/health"
+include_details = false              # Don't expose internal details
+
+# Liveness and readiness probes
+[observability.health.liveness]
+endpoint = "/health/live"
+[observability.health.readiness]
+endpoint = "/health/ready"
+
+# ==============================================================================
+# API SETTINGS
+# ==============================================================================
+
+[api]
+version = "v1"
+prefix = "/api/v1"
+
+[api.cors]
+enabled = true
+allow_origins = [
+    "https://apex.example.com",
+    "https://app.apex.example.com",
+]
+allow_methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+allow_headers = ["Authorization", "Content-Type", "X-API-Key", "X-Request-Id"]
+expose_headers = ["X-Request-Id", "X-Trace-Id", "X-RateLimit-Remaining", "X-RateLimit-Reset"]
+allow_credentials = true
+max_age = 86400                      # 24 hours
+
+[api.validation]
+strict_mode = true
+max_body_size = "10MB"
+max_json_depth = 32
+
+[api.pagination]
+default_page_size = 20
+max_page_size = 100
+
+[api.response]
+include_request_id = true
+include_trace_id = false             # Don't expose trace IDs externally
+include_timing = false               # Don't expose timing info
+include_debug_info = false           # NEVER in production
+
+# ==============================================================================
+# WORKER SETTINGS
+# ==============================================================================
+
+[worker]
+enabled = true
+name = "apex-worker-prod"
+
+max_concurrent_tasks = 50
+max_concurrent_agents = 200
+task_buffer_size = 500
+
+[worker.execution]
+default_timeout = 300
+max_timeout = 1800                   # 30 minutes max
+poll_interval = 1
+
+[worker.agents]
+max_steps = 500
+max_tool_calls = 200
+default_memory_limit = "2GB"
+execution_timeout = 900              # 15 minutes per agent
+
+[worker.heartbeat]
+enabled = true
+interval = 10
+timeout = 30
+
+# Auto-scaling settings (for orchestrator integration)
+[worker.autoscaling]
+enabled = true
+min_workers = 3
+max_workers = 50
+scale_up_threshold = 0.8             # Scale up at 80% utilization
+scale_down_threshold = 0.3           # Scale down at 30% utilization
+cooldown_period = 300                # 5 minutes between scaling events
+
+# ==============================================================================
+# MODEL ROUTING (FrugalGPT)
+# ==============================================================================
+
+[model_routing]
+enabled = true
+strategy = "frugalgpt"
+
+[model_routing.defaults]
+token_limit = 100000
+cost_limit = 1.00
+time_limit = 900
+
+[model_routing.frugalgpt]
+quality_threshold = 0.8              # Higher quality threshold in production
+enable_caching = true
+cache_ttl = 7200
+
+cascade = [
+    { name = "gpt-3.5-turbo", provider = "openai", max_tokens = 4096 },
+    { name = "gpt-4-turbo", provider = "openai", max_tokens = 8192 },
+    { name = "gpt-4", provider = "openai", max_tokens = 8192 },
+    { name = "claude-3-sonnet", provider = "anthropic", max_tokens = 8192 },
+    { name = "claude-3-opus", provider = "anthropic", max_tokens = 8192 },
+]
+
+[model_routing.frugalgpt.scoring]
+coherence_weight = 0.3
+completeness_weight = 0.3
+relevance_weight = 0.4
+
+# Circuit breaker for model providers
+[model_routing.circuit_breaker]
+enabled = true
+failure_threshold = 5
+recovery_timeout = 60
+half_open_requests = 3
+
+[model_routing.providers.openai]
+enabled = true
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://api.openai.com/v1"
+timeout = 180
+max_retries = 5
+retry_delay = 5
+
+[model_routing.providers.anthropic]
+enabled = true
+api_key_env = "ANTHROPIC_API_KEY"
+base_url = "https://api.anthropic.com"
+timeout = 180
+max_retries = 5
+retry_delay = 5
+
+# Backup provider configuration
+[model_routing.providers.azure_openai]
+enabled = true
+api_key_env = "AZURE_OPENAI_API_KEY"
+base_url = "${AZURE_OPENAI_ENDPOINT}"
+timeout = 180
+max_retries = 5
+retry_delay = 5
+deployment_name = "gpt-4"
+
+[model_routing.models."gpt-3.5-turbo"]
+provider = "openai"
+context_window = 16385
+cost_per_1k_input = 0.0005
+cost_per_1k_output = 0.0015
+average_latency_ms = 500
+
+[model_routing.models."gpt-4-turbo"]
+provider = "openai"
+context_window = 128000
+cost_per_1k_input = 0.01
+cost_per_1k_output = 0.03
+average_latency_ms = 2000
+
+[model_routing.models."gpt-4"]
+provider = "openai"
+context_window = 8192
+cost_per_1k_input = 0.03
+cost_per_1k_output = 0.06
+average_latency_ms = 3000
+
+[model_routing.models."claude-3-sonnet"]
+provider = "anthropic"
+context_window = 200000
+cost_per_1k_input = 0.003
+cost_per_1k_output = 0.015
+average_latency_ms = 1500
+
+[model_routing.models."claude-3-opus"]
+provider = "anthropic"
+context_window = 200000
+cost_per_1k_input = 0.015
+cost_per_1k_output = 0.075
+average_latency_ms = 5000
+
+# ==============================================================================
+# RATE LIMITING
+# ==============================================================================
+
+[rate_limiting]
+enabled = true
+backend = "redis"
+
+[rate_limiting.global]
+requests_per_second = 2000
+burst_size = 100
+
+[rate_limiting.per_client]
+requests_per_minute = 120            # 2 req/sec average
+requests_per_hour = 3000
+burst_size = 20
+
+[rate_limiting.endpoints."/api/v1/chat/completions"]
+requests_per_minute = 30
+burst_size = 10
+
+[rate_limiting.endpoints."/api/v1/agents/execute"]
+requests_per_minute = 15
+burst_size = 5
+
+[rate_limiting.cost]
+enabled = true
+daily_limit = 50.0
+monthly_limit = 500.0
+
+[rate_limiting.headers]
+include_limit = true
+include_remaining = true
+include_reset = true
+
+# Adaptive rate limiting based on load
+[rate_limiting.adaptive]
+enabled = true
+cpu_threshold = 0.9                  # Reduce limits at 90% CPU
+memory_threshold = 0.85              # Reduce limits at 85% memory
+reduction_factor = 0.5               # Reduce to 50% of normal limits
+
+# ==============================================================================
+# SECURITY SETTINGS
+# ==============================================================================
+
+[security]
+encryption_key_env = "APEX_ENCRYPTION_KEY"
+
+[security.jwt]
+secret_env = "JWT_SECRET"
+algorithm = "RS256"
+issuer = "apex-production"
+audience = ["apex-api"]
+expiry_hours = 4                     # Shorter expiry in production
+refresh_expiry_days = 1
+include_user_claims = true
+
+# RSA keys (never store in config)
+public_key_path = "/etc/apex/keys/jwt-public.pem"
+private_key_path = "/etc/apex/keys/jwt-private.pem"
+
+# Key rotation
+[security.jwt.rotation]
+enabled = true
+rotation_interval_days = 90
+grace_period_hours = 24
+
+[security.api_keys]
+enabled = true
+header_name = "X-API-Key"
+hash_algorithm = "argon2"
+
+# API key rotation policy
+[security.api_keys.policy]
+max_age_days = 365
+warn_before_expiry_days = 30
+
+[security.request]
+max_input_length = 100000
+sanitize_html = true
+block_script_tags = true
+
+# Request signing (recommended for production)
+require_signature = false            # Enable for high-security deployments
+signature_header = "X-Signature"
+signature_algorithm = "hmac-sha256"
+
+# CSRF protection
+[security.csrf]
+enabled = true
+cookie_name = "apex_csrf"
+header_name = "X-CSRF-Token"
+secure_cookie = true
+same_site = "strict"
+
+[security.audit]
+enabled = true
+log_successful_auth = true
+log_failed_auth = true
+log_api_access = true
+log_sensitive_operations = true
+
+# Audit log retention
+retention_days = 2555                # 7 years for compliance
+
+[security.sandbox]
+enabled = true
+network_access = "restricted"
+allowed_hosts = [
+    "api.github.com",
+    "api.openai.com",
+    "api.anthropic.com",
+]
+filesystem_access = "none"
+max_execution_time = 120
+max_memory = "1GB"
+max_processes = 50
+
+[security.ip_filter]
+enabled = false                      # Enable if using IP allowlisting
+# allowlist = []
+# blocklist = []
+
+# WAF integration
+[security.waf]
+enabled = true
+provider = "cloudflare"              # cloudflare, aws_waf, custom
+block_suspicious = true
+
+# DDoS protection
+[security.ddos]
+enabled = true
+connection_limit_per_ip = 50
+ban_threshold = 1000                 # Ban after 1000 blocked requests
+ban_duration = 3600                  # 1 hour ban
+
+# ==============================================================================
+# FEATURE FLAGS
+# ==============================================================================
+
+[features]
+new_agent_runtime = true
+enhanced_caching = true
+model_fallback = true
+streaming_responses = true
+websocket_support = true
+grpc_api = true
+
+[features.experimental]
+multi_agent_orchestration = false    # Disable experimental features in production
+code_interpreter = false
+web_browsing = false
+file_upload = true
+
+# Feature flag provider (for dynamic flags)
+[features.provider]
+type = "launchdarkly"                # launchdarkly, split, custom
+sdk_key_env = "LAUNCHDARKLY_SDK_KEY"
+polling_interval = 30
+
+# ==============================================================================
+# PRODUCTION-SPECIFIC SETTINGS
+# ==============================================================================
+
+[production]
+# Data retention
+data_retention_days = 365
+
+# Backup settings
+[production.backup]
+enabled = true
+schedule = "0 2 * * *"               # 2 AM daily
+retention_days = 30
+s3_bucket = "${BACKUP_S3_BUCKET}"
+
+# Disaster recovery
+[production.disaster_recovery]
+enabled = true
+rpo_hours = 1                        # Recovery Point Objective
+rto_hours = 4                        # Recovery Time Objective
+secondary_region = "us-west-2"
+
+# Compliance
+[production.compliance]
+gdpr_enabled = true
+data_residency = "us-east-1"
+pii_encryption = true
+audit_trail = true
+
+# Alerting
+[production.alerting]
+enabled = true
+pagerduty_key_env = "PAGERDUTY_KEY"
+slack_webhook_env = "SLACK_ALERT_WEBHOOK"
+
+# Alert thresholds
+[production.alerting.thresholds]
+error_rate_percent = 1.0             # Alert if error rate > 1%
+latency_p99_ms = 5000                # Alert if p99 > 5s
+cpu_percent = 90
+memory_percent = 85
+disk_percent = 80

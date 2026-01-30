@@ -1,0 +1,255 @@
+services:
+  # ══════════════════════════════════════════════════════════════════════════════
+  # APEX CORE SERVICES
+  # ══════════════════════════════════════════════════════════════════════════════
+
+  apex-api:
+    build:
+      context: ./src/backend/core
+      dockerfile: Dockerfile
+    container_name: apex-api
+    ports:
+      - "8080:8080"   # REST API
+      - "50051:50051" # gRPC
+    environment:
+      - RUST_LOG=info,apex_core=debug
+      - DATABASE_URL=postgres://apex:apex_secret@postgres:5432/apex
+      - REDIS_URL=redis://redis:6379
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - PROMETHEUS_PORT=9090
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - apex-internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  apex-worker:
+    build:
+      context: ./src/backend/agents
+      dockerfile: Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgres://apex:apex_secret@postgres:5432/apex
+      - REDIS_URL=redis://redis:6379
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    depends_on:
+      - apex-api
+      - postgres
+      - redis
+    networks:
+      - apex-internal
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  apex-dashboard:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+    container_name: apex-dashboard
+    ports:
+      - "3000:80"
+    depends_on:
+      - apex-api
+    networks:
+      - apex-internal
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # DATA STORES
+  # ══════════════════════════════════════════════════════════════════════════════
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: apex-postgres
+    environment:
+      - POSTGRES_USER=apex
+      - POSTGRES_PASSWORD=apex_secret
+      - POSTGRES_DB=apex
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./src/backend/core/migrations:/docker-entrypoint-initdb.d:ro
+    networks:
+      - apex-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apex -d apex"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  redis:
+    image: redis:7-alpine
+    container_name: apex-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - apex-internal
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # OBSERVABILITY STACK
+  # ══════════════════════════════════════════════════════════════════════════════
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.53
+    container_name: apex-jaeger
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - apex-internal
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  prometheus:
+    image: prom/prometheus:v2.48.1
+    container_name: apex-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/observability/prometheus/rules:/etc/prometheus/rules:ro
+      - ./infra/monitoring/alerts:/etc/prometheus/alerts:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    networks:
+      - apex-internal
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: apex-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=apex_admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./infra/monitoring/dashboards:/var/lib/grafana/dashboards/monitoring:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - jaeger
+    networks:
+      - apex-internal
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  loki:
+    image: grafana/loki:2.9.3
+    container_name: apex-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./infra/observability/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - apex-internal
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # TOOL SANDBOX (Isolated execution environment)
+  # ══════════════════════════════════════════════════════════════════════════════
+
+  sandbox:
+    build:
+      context: ./infra/docker
+      dockerfile: Dockerfile.sandbox
+    container_name: apex-sandbox
+    networks:
+      - apex-sandbox
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=100M
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+          pids: 100
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NETWORKS
+# ══════════════════════════════════════════════════════════════════════════════
+
+networks:
+  apex-internal:
+    driver: bridge
+  apex-sandbox:
+    driver: bridge
+    internal: true  # No external access
+
+# ══════════════════════════════════════════════════════════════════════════════
+# VOLUMES
+# ══════════════════════════════════════════════════════════════════════════════
+
+volumes:
+  postgres-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+  loki-data:

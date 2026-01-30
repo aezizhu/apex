@@ -1,0 +1,103 @@
+{{- if .Values.monitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "apex.fullname" . }}
+  labels:
+    {{- include "apex.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: apex.rules
+      rules:
+        # Alert if task queue is growing
+        - alert: ApexTaskQueueBacklog
+          expr: apex_task_queue_depth > 100
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Task queue backlog growing"
+            description: "Task queue has {{ $value }} pending tasks for more than 5 minutes"
+
+        # Alert if task failure rate is high
+        - alert: ApexHighTaskFailureRate
+          expr: |
+            rate(apex_tasks_failed_total[5m]) /
+            (rate(apex_tasks_completed_total[5m]) + rate(apex_tasks_failed_total[5m])) > 0.1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High task failure rate"
+            description: "Task failure rate is {{ $value | humanizePercentage }}"
+
+        # Alert if no agents are available
+        - alert: ApexNoActiveAgents
+          expr: apex_active_agents == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No active agents"
+            description: "No agents are currently active to process tasks"
+
+        # Alert if agent utilization is very high
+        - alert: ApexHighAgentUtilization
+          expr: apex_agent_utilization_percent > 95
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High agent utilization"
+            description: "Agent utilization is {{ $value }}% for more than 10 minutes"
+
+        # Alert if cost limit is approaching
+        - alert: ApexCostLimitApproaching
+          expr: |
+            apex_total_cost_used / apex_total_cost_budget > 0.9
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Cost limit approaching"
+            description: "Cost usage is at {{ $value | humanizePercentage }} of budget"
+
+        # Alert if API latency is high
+        - alert: ApexHighAPILatency
+          expr: |
+            histogram_quantile(0.95, rate(apex_api_request_duration_seconds_bucket[5m])) > 2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High API latency"
+            description: "95th percentile API latency is {{ $value }}s"
+
+        # Alert if circuit breaker is open
+        - alert: ApexCircuitBreakerOpen
+          expr: apex_circuit_breaker_state == 2
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Circuit breaker is open"
+            description: "Circuit breaker {{ $labels.name }} is in OPEN state"
+
+    - name: apex.recording
+      rules:
+        # Record task throughput
+        - record: apex:task_throughput_per_minute
+          expr: rate(apex_tasks_completed_total[1m]) * 60
+
+        # Record agent efficiency
+        - record: apex:agent_efficiency
+          expr: |
+            rate(apex_tasks_completed_total[5m]) /
+            (apex_active_agents + 0.001)
+
+        # Record cost per task
+        - record: apex:cost_per_task
+          expr: |
+            rate(apex_total_cost_used[5m]) /
+            (rate(apex_tasks_completed_total[5m]) + 0.001)
+{{- end }}

@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "apex.fullname" . }}-config
+  labels:
+    {{- include "apex.labels" . | nindent 4 }}
+data:
+  # Orchestrator Configuration
+  APEX__ORCHESTRATOR__MAX_CONCURRENT_AGENTS: {{ .Values.config.orchestrator.maxConcurrentAgents | quote }}
+  APEX__ORCHESTRATOR__DEFAULT_TOKEN_LIMIT: {{ .Values.config.orchestrator.defaultTokenLimit | quote }}
+  APEX__ORCHESTRATOR__DEFAULT_COST_LIMIT: {{ .Values.config.orchestrator.defaultCostLimit | quote }}
+  APEX__ORCHESTRATOR__DEFAULT_TIME_LIMIT_SECONDS: {{ .Values.config.orchestrator.defaultTimeLimitSeconds | quote }}
+
+  # Model Routing Configuration
+  APEX__ROUTING__ECONOMY_MODEL: {{ .Values.config.routing.economyModel | quote }}
+  APEX__ROUTING__STANDARD_MODEL: {{ .Values.config.routing.standardModel | quote }}
+  APEX__ROUTING__PREMIUM_MODEL: {{ .Values.config.routing.premiumModel | quote }}
+  APEX__ROUTING__CONFIDENCE_THRESHOLD: {{ .Values.config.routing.confidenceThreshold | quote }}
+
+  # Observability Configuration
+  OTEL_SERVICE_NAME: {{ .Values.config.observability.serviceName | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.config.observability.otlpEndpoint | quote }}
+  RUST_LOG: {{ .Values.config.logging.level | quote }}
+
+  # API Configuration
+  APEX__API__HOST: "0.0.0.0"
+  APEX__API__HTTP_PORT: {{ .Values.api.service.port | quote }}
+  APEX__API__GRPC_PORT: {{ .Values.api.service.grpcPort | quote }}
+  APEX__API__CORS_ORIGINS: {{ .Values.config.api.corsOrigins | quote }}

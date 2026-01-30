@@ -1,0 +1,104 @@
+# Alerting rules for Project Apex
+
+groups:
+  - name: apex-core
+    rules:
+      # High error rate
+      - alert: HighTaskFailureRate
+        expr: |
+          sum(rate(apex_tasks_failed[5m])) /
+          sum(rate(apex_tasks_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High task failure rate"
+          description: "Task failure rate is above 5% (current: {{ $value | humanizePercentage }})"
+
+      # Cost overspend
+      - alert: CostOverspend
+        expr: |
+          sum(increase(apex_cost_total[1h])) > 10
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High cost accumulation"
+          description: "Spent more than $10 in the last hour (current: ${{ $value | humanize }})"
+
+      # High latency
+      - alert: HighAgentLatency
+        expr: |
+          histogram_quantile(0.95, rate(apex_task_duration_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High agent latency"
+          description: "P95 task latency is above 30 seconds (current: {{ $value | humanizeDuration }})"
+
+      # Queue depth high
+      - alert: HighQueueDepth
+        expr: apex_queue_depth > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High queue depth"
+          description: "Task queue depth is above 100 (current: {{ $value }})"
+
+      # No active agents
+      - alert: NoActiveAgents
+        expr: apex_active_agents == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No active agents"
+          description: "All agents are down or paused"
+
+      # Agent error rate
+      - alert: AgentHighErrorRate
+        expr: |
+          sum by (agent_id) (rate(apex_tasks_failed{agent_id!=""}[5m])) /
+          sum by (agent_id) (rate(apex_tasks_total{agent_id!=""}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent has high error rate"
+          description: "Agent {{ $labels.agent_id }} has error rate above 10%"
+
+  - name: apex-infrastructure
+    rules:
+      # Database connection issues
+      - alert: DatabaseConnectionIssues
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database connection lost"
+          description: "Cannot connect to PostgreSQL database"
+
+      # Redis connection issues
+      - alert: RedisConnectionIssues
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis connection lost"
+          description: "Cannot connect to Redis"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) /
+          node_memory_MemTotal_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is above 90%"

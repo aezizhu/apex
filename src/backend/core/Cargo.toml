@@ -1,0 +1,111 @@
+[package]
+name = "apex-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80.0"
+authors = ["Aezi <aezi.zhu@icloud.com>"]
+description = "Project Apex - World's No. 1 Agent Swarm Orchestration Engine"
+license = "Apache-2.0"
+repository = "https://github.com/apex-swarm/apex"
+
+[lib]
+name = "apex_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "apex-server"
+path = "src/main.rs"
+
+[[bin]]
+name = "apex"
+path = "src/bin/apex-cli.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full", "tracing"] }
+tokio-util = { version = "0.7", features = ["full"] }
+
+# Web framework
+axum = { version = "0.7", features = ["ws", "macros"] }
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
+
+# gRPC
+tonic = { version = "0.11", features = ["gzip", "tls"] }
+prost = "0.12"
+tokio-stream = { version = "0.1", features = ["sync"] }
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json"] }
+deadpool-postgres = "0.12"
+
+# Redis
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.22"
+opentelemetry = "0.21"
+opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.14", features = ["tonic"] }
+metrics = "0.22"
+metrics-exporter-prometheus = "0.13"
+
+# Utilities
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1.0"
+anyhow = "1.0"
+async-trait = "0.1"
+futures = "0.3"
+parking_lot = "0.12"
+dashmap = "5.5"
+petgraph = "0.6"  # For DAG operations
+regex = "1.10"    # For sensitive data redaction patterns
+base64 = "0.22"   # For cursor encoding
+
+# Config
+config = "0.14"
+dotenvy = "0.15"
+
+# Crypto
+jsonwebtoken = "9.2"
+argon2 = "0.5"
+sha2 = "0.10"
+hex = "0.4"
+
+# HTTP client (for LLM API calls)
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+
+# CLI
+clap = { version = "4.4", features = ["derive", "color", "suggestions", "unicode", "env"] }
+colored = "2.1"
+indicatif = "0.17"
+tabled = "0.15"
+
+[dev-dependencies]
+tokio-test = "0.4"
+criterion = { version = "0.5", features = ["async_tokio"] }
+fake = { version = "2.9", features = ["derive"] }
+wiremock = "0.5"
+
+[build-dependencies]
+tonic-build = "0.11"
+
+[[bench]]
+name = "orchestrator_bench"
+harness = false
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.bench]
+debug = true

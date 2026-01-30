@@ -1,0 +1,114 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Project Apex - API Server Dockerfile (Optimized)
+# Multi-stage build for production Rust binary with minimal footprint
+# ══════════════════════════════════════════════════════════════════════════════
+
+# syntax=docker/dockerfile:1.7
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 1: Chef - Dependency planning
+# ─────────────────────────────────────────────────────────────────────────────
+FROM rust:1.75-bookworm AS chef
+
+RUN cargo install cargo-chef --locked
+WORKDIR /app
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 2: Planner - Generate recipe from Cargo files
+# ─────────────────────────────────────────────────────────────────────────────
+FROM chef AS planner
+
+COPY Cargo.toml Cargo.lock ./
+COPY src/ src/
+COPY build.rs ./
+COPY proto/ proto/
+
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 3: Builder - Build dependencies and application
+# ─────────────────────────────────────────────────────────────────────────────
+FROM chef AS builder
+
+# Install protobuf compiler for gRPC
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    protobuf-compiler \
+    libprotobuf-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy dependency recipe and build dependencies (cached layer)
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# Copy actual source code
+COPY . .
+
+# Build the application
+ENV SQLX_OFFLINE=true
+ENV CARGO_INCREMENTAL=0
+ENV CARGO_NET_RETRY=10
+ENV RUSTUP_MAX_RETRIES=10
+
+# Build with optimizations
+RUN cargo build --release --locked \
+    && strip /app/target/release/apex-core
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 4: Runtime - Minimal production image
+# ─────────────────────────────────────────────────────────────────────────────
+FROM debian:bookworm-slim AS runtime
+
+# Labels
+LABEL org.opencontainers.image.title="Apex API Server" \
+      org.opencontainers.image.description="High-performance Rust API server for Project Apex" \
+      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.authors="Aezi <aezi.zhu@icloud.com>" \
+      org.opencontainers.image.source="https://github.com/apex-swarm/apex"
+
+# Install minimal runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libssl3 \
+    curl \
+    tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create non-root user for security
+RUN groupadd --gid 1000 apex \
+    && useradd --uid 1000 --gid apex --shell /sbin/nologin --no-create-home apex
+
+WORKDIR /app
+
+# Copy the binary from builder
+COPY --from=builder --chown=apex:apex /app/target/release/apex-core /app/apex-core
+
+# Copy migrations (needed at runtime for embedded migrations)
+COPY --from=builder --chown=apex:apex /app/migrations /app/migrations
+
+# Create directories for runtime data
+RUN mkdir -p /app/data /app/logs \
+    && chown -R apex:apex /app
+
+# Switch to non-root user
+USER apex
+
+# Environment variables
+ENV RUST_LOG=info,apex_core=debug \
+    APEX__API__HOST=0.0.0.0 \
+    APEX__API__HTTP_PORT=8080 \
+    APEX__API__GRPC_PORT=50051 \
+    RUST_BACKTRACE=1
+
+# Expose ports
+EXPOSE 8080 50051 9090
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Use tini as init system for proper signal handling
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+# Run the binary
+CMD ["/app/apex-core"]

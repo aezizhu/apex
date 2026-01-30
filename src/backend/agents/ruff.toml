@@ -1,0 +1,68 @@
+# Ruff configuration for Project Apex Python code
+# https://docs.astral.sh/ruff/
+
+# Target Python 3.11+
+target-version = "py311"
+line-length = 100
+
+[lint]
+# Enable recommended rules
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+    "TCH",    # flake8-type-checking
+    "PTH",    # flake8-use-pathlib
+    "ERA",    # eradicate (commented-out code)
+    "PL",     # Pylint
+    "RUF",    # Ruff-specific rules
+    "ASYNC",  # flake8-async
+]
+
+ignore = [
+    "E501",    # line too long (handled by formatter)
+    "B008",    # function call in default argument (needed for FastAPI Depends)
+    "PLR0913", # too many arguments
+    "PLR2004", # magic value comparison
+]
+
+# Allow autofix for all enabled rules
+fixable = ["ALL"]
+unfixable = []
+
+# Exclude directories
+exclude = [
+    ".git",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "*.pyi",
+]
+
+[lint.per-file-ignores]
+# Tests can use assert and have more flexibility
+"tests/**/*.py" = ["S101", "ARG001", "PLR2004"]
+
+[lint.isort]
+known-first-party = ["apex_agents"]
+force-single-line = false
+combine-as-imports = true
+
+[lint.pylint]
+max-args = 8
+max-branches = 12
+max-returns = 6
+max-statements = 50
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

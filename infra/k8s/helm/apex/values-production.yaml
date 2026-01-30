@@ -1,0 +1,321 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Project Apex - Production Environment Values
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Global settings
+global:
+  environment: production
+
+# ──────────────────────────────────────────────────────────────────────────────
+# API Server - Production
+# ──────────────────────────────────────────────────────────────────────────────
+api:
+  replicaCount: 3
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 65
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+      nginx.ingress.kubernetes.io/rate-limit: "100"
+      nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: api.apex.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: api-prod-tls
+        hosts:
+          - api.apex.example.com
+
+  env:
+    RUST_LOG: "info,apex_core=info"
+    ENVIRONMENT: "production"
+
+  # Production-specific node affinity
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - apex-api
+            topologyKey: kubernetes.io/hostname
+
+  # Topology spread for high availability
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: apex-api
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Worker Pool - Production
+# ──────────────────────────────────────────────────────────────────────────────
+worker:
+  replicaCount: 5
+  workersPerPod: 1
+  agentsPerWorker: 5
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 5
+    maxReplicas: 50
+    metrics:
+      - type: External
+        external:
+          metric:
+            name: apex_queue_depth
+          target:
+            type: AverageValue
+            averageValue: 10
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 3
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - apex-worker
+            topologyKey: kubernetes.io/hostname
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Dashboard - Production
+# ──────────────────────────────────────────────────────────────────────────────
+dashboard:
+  replicaCount: 2
+
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: apex.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: dashboard-prod-tls
+        hosts:
+          - apex.example.com
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PostgreSQL - Production (use external managed DB recommended)
+# ──────────────────────────────────────────────────────────────────────────────
+postgresql:
+  # Recommend using managed PostgreSQL (RDS, Cloud SQL, Azure Database)
+  # Set enabled: false and configure externalDatabase
+  enabled: true
+  primary:
+    persistence:
+      enabled: true
+      size: 50Gi
+      storageClass: "gp3"
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "2"
+
+# Uncomment for external database
+# externalDatabase:
+#   host: "apex-db.xxx.rds.amazonaws.com"
+#   port: 5432
+#   database: "apex"
+#   username: "apex"
+#   existingSecret: "apex-db-credentials"
+#   existingSecretPasswordKey: "password"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Redis - Production (use external managed Redis recommended)
+# ──────────────────────────────────────────────────────────────────────────────
+redis:
+  # Recommend using managed Redis (ElastiCache, Memorystore, Azure Cache)
+  enabled: true
+  architecture: replication
+  auth:
+    enabled: true
+    existingSecret: "apex-redis-credentials"
+  master:
+    persistence:
+      enabled: true
+      size: 5Gi
+      storageClass: "gp3"
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1"
+  replica:
+    replicaCount: 2
+    persistence:
+      enabled: true
+      size: 5Gi
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Monitoring - Production
+# ──────────────────────────────────────────────────────────────────────────────
+monitoring:
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+
+  prometheusRule:
+    enabled: true
+    # Additional production alerts
+    additionalRules:
+      - alert: ApexHighErrorRate
+        expr: |
+          sum(rate(apex_http_requests_total{status=~"5.."}[5m])) /
+          sum(rate(apex_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: High error rate detected
+          description: "Error rate is above 5% for the last 5 minutes"
+
+      - alert: ApexHighLatency
+        expr: |
+          histogram_quantile(0.99, rate(apex_http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High latency detected
+          description: "99th percentile latency is above 2 seconds"
+
+      - alert: ApexWorkerQueueBacklog
+        expr: apex_queue_depth > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Worker queue backlog
+          description: "Task queue depth is above 100 for 10 minutes"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Configuration - Production
+# ──────────────────────────────────────────────────────────────────────────────
+config:
+  orchestrator:
+    maxConcurrentAgents: "200"
+    defaultTokenLimit: "20000"
+    defaultCostLimit: "0.50"
+    defaultTimeLimitSeconds: "600"
+
+  routing:
+    economyModel: "gpt-4o-mini"
+    standardModel: "gpt-4o"
+    premiumModel: "claude-3-opus"
+    confidenceThreshold: "0.85"
+
+  logging:
+    level: "info,apex_core=info"
+
+  api:
+    # Restrict CORS in production
+    corsOrigins: "https://apex.example.com"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Network Policies - Production
+# ──────────────────────────────────────────────────────────────────────────────
+networkPolicy:
+  enabled: true
+  # Only allow ingress from nginx ingress controller
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 50051
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Pod Security - Production
+# ──────────────────────────────────────────────────────────────────────────────
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Priority Classes - Production
+# ──────────────────────────────────────────────────────────────────────────────
+priorityClassName: "high-priority"

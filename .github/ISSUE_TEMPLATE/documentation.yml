@@ -1,0 +1,154 @@
+name: Documentation Improvement
+description: Suggest improvements to documentation
+title: "[Docs]: "
+labels: ["documentation", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping us improve our documentation! Please fill out the form below.
+
+  - type: checkboxes
+    id: existing-issue
+    attributes:
+      label: Pre-submission Checklist
+      description: Please verify the following before submitting
+      options:
+        - label: I have searched existing issues to ensure this has not already been reported
+          required: true
+
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: Documentation Type
+      description: What type of documentation is this about?
+      options:
+        - README
+        - API Reference
+        - Tutorial/Guide
+        - Code Comments
+        - Configuration
+        - Installation Instructions
+        - Contribution Guidelines
+        - Changelog
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Issue Type
+      description: What kind of documentation issue is this?
+      options:
+        - Missing Documentation (information not documented)
+        - Incorrect Information (documentation is wrong)
+        - Outdated Information (documentation is out of date)
+        - Unclear/Confusing (documentation is hard to understand)
+        - Incomplete (documentation is partially missing)
+        - Typo/Grammar (spelling or grammatical error)
+        - Broken Links (links that don't work)
+        - Missing Examples (need code examples)
+        - Reorganization (structure could be improved)
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Documentation Location
+      description: Where is the documentation located? (URL, file path, or section name)
+      placeholder: e.g., https://docs.example.com/getting-started or README.md#installation
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-state
+    attributes:
+      label: Current Documentation
+      description: What does the current documentation say? (Copy the relevant text if applicable)
+      placeholder: Paste the current documentation text here...
+    validations:
+      required: false
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Description
+      description: What is wrong or missing from the current documentation?
+      placeholder: Describe the issue with the current documentation...
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Improvement
+      description: How should the documentation be improved?
+      placeholder: |
+        Provide your suggested changes or additions...
+
+        For text changes, you can use this format:
+        - Remove: "old text"
+        - Add: "new text"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Target Audience
+      description: Who is the primary audience for this documentation?
+      options:
+        - Beginners (new users)
+        - Intermediate Users
+        - Advanced Users
+        - Contributors/Developers
+        - Administrators
+        - All Users
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this documentation improvement?
+      options:
+        - Critical (Blocking users from using the product)
+        - High (Causing significant confusion)
+        - Medium (Would improve user experience)
+        - Low (Minor improvement)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution Interest
+      description: Would you be interested in contributing to this improvement?
+      options:
+        - label: I am willing to submit a pull request with these documentation changes
+          required: false
+
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Links to related documentation, discussions, or examples
+      placeholder: |
+        - Related issue: #123
+        - External reference: https://example.com
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context about the documentation improvement
+      placeholder: Add any other context here...
+    validations:
+      required: false

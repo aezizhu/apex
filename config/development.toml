@@ -1,0 +1,515 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Project Apex - Development Configuration
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# This configuration is optimized for local development with:
+#   - Verbose logging and debugging enabled
+#   - Relaxed security settings for easier testing
+#   - Local service endpoints (localhost)
+#   - Hot-reload friendly settings
+#
+# Usage:
+#   APEX_CONFIG=config/development.toml cargo run
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ==============================================================================
+# ENVIRONMENT
+# ==============================================================================
+
+[environment]
+name = "development"
+debug = true
+log_level = "debug"
+
+# ==============================================================================
+# SERVER CONFIGURATION
+# ==============================================================================
+
+[server]
+# HTTP/REST API settings
+host = "127.0.0.1"
+port = 8080
+workers = 4                          # Number of worker threads
+keep_alive = 75                      # Keep-alive timeout in seconds
+shutdown_timeout = 30                # Graceful shutdown timeout
+
+# Request handling
+max_request_size = "10MB"            # Maximum request body size
+request_timeout = 60                 # Request timeout in seconds
+
+# TLS (disabled for development)
+tls_enabled = false
+# tls_cert_path = ""
+# tls_key_path = ""
+
+[server.grpc]
+enabled = true
+port = 50051
+max_message_size = "16MB"
+reflection_enabled = true            # Enable gRPC reflection for debugging
+
+# ==============================================================================
+# DATABASE (PostgreSQL)
+# ==============================================================================
+
+[database]
+# Connection URL (can be overridden by DATABASE_URL env var)
+url = "postgres://apex:apex_secret@localhost:5432/apex"
+
+# Connection pool settings
+min_connections = 2                  # Minimum pool size
+max_connections = 10                 # Maximum pool size
+acquire_timeout = 10                 # Timeout for acquiring connection (seconds)
+idle_timeout = 300                   # Idle connection timeout (seconds)
+max_lifetime = 1800                  # Maximum connection lifetime (seconds)
+
+# Query settings
+statement_cache_size = 100           # Prepared statement cache size
+log_queries = true                   # Log all SQL queries (development only)
+log_slow_queries_ms = 100            # Log queries slower than this (ms)
+
+# Migrations
+run_migrations_on_startup = true     # Auto-run migrations
+migrations_path = "./migrations"
+
+[database.ssl]
+enabled = false                      # SSL disabled for local development
+# mode = "prefer"                    # require, prefer, disable
+# ca_cert_path = ""
+# client_cert_path = ""
+# client_key_path = ""
+
+# ==============================================================================
+# CACHE (Redis)
+# ==============================================================================
+
+[cache]
+enabled = true
+url = "redis://localhost:6379"
+# password = ""                      # Optional password
+
+# Connection pool
+pool_size = 5
+connection_timeout = 5               # Connection timeout (seconds)
+
+# Default TTLs (seconds)
+default_ttl = 3600                   # 1 hour default
+session_ttl = 86400                  # 24 hours for sessions
+model_response_ttl = 1800            # 30 minutes for model responses
+
+# Key prefixes for namespacing
+key_prefix = "apex:dev:"
+
+[cache.cluster]
+enabled = false                      # Single node for development
+# nodes = []
+
+# ==============================================================================
+# MESSAGE QUEUE
+# ==============================================================================
+
+[queue]
+# Queue backend: "redis" or "rabbitmq"
+backend = "redis"
+url = "redis://localhost:6379"
+
+# Redis queue settings
+[queue.redis]
+queue_prefix = "apex:queue:dev:"
+processing_timeout = 300             # Task processing timeout (seconds)
+retry_attempts = 3
+retry_delay = 5                      # Delay between retries (seconds)
+visibility_timeout = 30              # How long a task is invisible after dequeue
+
+# Queue definitions
+[queue.queues.default]
+name = "default"
+priority = 1
+max_workers = 4
+
+[queue.queues.high_priority]
+name = "high_priority"
+priority = 10
+max_workers = 2
+
+[queue.queues.low_priority]
+name = "low_priority"
+priority = 0
+max_workers = 2
+
+# Dead letter queue
+[queue.dead_letter]
+enabled = true
+max_retries = 5
+ttl = 604800                         # 7 days
+
+# ==============================================================================
+# OBSERVABILITY
+# ==============================================================================
+
+[observability]
+# Service identification
+service_name = "apex-server"
+service_version = "0.1.0"
+environment = "development"
+
+# Logging configuration
+[observability.logging]
+level = "debug"                      # trace, debug, info, warn, error
+format = "pretty"                    # json, pretty, compact
+output = "stdout"                    # stdout, stderr, file
+include_file_line = true             # Include source file and line
+include_target = true                # Include module target
+
+# Filter noisy modules
+filters = [
+    "hyper=info",
+    "tower=info",
+    "sqlx=warn",
+    "tokio_postgres=warn",
+]
+
+# File logging (optional)
+[observability.logging.file]
+enabled = false
+path = "./logs/apex.log"
+rotation = "daily"                   # hourly, daily, never
+max_files = 7
+
+# Distributed tracing (Jaeger/OTLP)
+[observability.tracing]
+enabled = true
+exporter = "otlp"                    # otlp, jaeger, zipkin, none
+endpoint = "http://localhost:4317"
+sample_rate = 1.0                    # Sample 100% in development
+propagation = "w3c"                  # w3c, jaeger, b3
+
+# Trace spans to record
+include_db_queries = true
+include_http_headers = true
+include_request_body = false         # Can be verbose
+
+# Metrics (Prometheus)
+[observability.metrics]
+enabled = true
+exporter = "prometheus"
+endpoint = "/metrics"
+port = 9090
+include_process_metrics = true
+include_runtime_metrics = true
+
+# Custom metric buckets for histograms
+[observability.metrics.histograms]
+request_duration_buckets = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+model_latency_buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0]
+
+# Health checks
+[observability.health]
+enabled = true
+endpoint = "/health"
+include_details = true               # Include component health in response
+
+# ==============================================================================
+# API SETTINGS
+# ==============================================================================
+
+[api]
+# API versioning
+version = "v1"
+prefix = "/api/v1"
+
+# CORS (relaxed for development)
+[api.cors]
+enabled = true
+allow_origins = ["*"]                # Allow all origins in development
+allow_methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+allow_headers = ["*"]
+expose_headers = ["X-Request-Id", "X-Trace-Id"]
+allow_credentials = true
+max_age = 3600
+
+# Request validation
+[api.validation]
+strict_mode = false                  # Lenient validation in development
+max_body_size = "10MB"
+max_json_depth = 32
+
+# Pagination defaults
+[api.pagination]
+default_page_size = 20
+max_page_size = 100
+
+# Response settings
+[api.response]
+include_request_id = true
+include_trace_id = true
+include_timing = true
+include_debug_info = true            # Include debug info in development
+
+# ==============================================================================
+# WORKER SETTINGS
+# ==============================================================================
+
+[worker]
+enabled = true
+name = "apex-worker-dev"
+
+# Concurrency settings
+max_concurrent_tasks = 10
+max_concurrent_agents = 50
+task_buffer_size = 100
+
+# Task execution
+[worker.execution]
+default_timeout = 300                # Default task timeout (seconds)
+max_timeout = 600                    # Maximum allowed timeout
+poll_interval = 1                    # Queue poll interval (seconds)
+
+# Agent execution limits
+[worker.agents]
+max_steps = 100                      # Maximum agent steps
+max_tool_calls = 50                  # Maximum tool calls per task
+default_memory_limit = "512MB"
+execution_timeout = 300              # Per-agent timeout
+
+# Heartbeat
+[worker.heartbeat]
+enabled = true
+interval = 10                        # Heartbeat interval (seconds)
+timeout = 30                         # Worker considered dead after this
+
+# ==============================================================================
+# MODEL ROUTING (FrugalGPT)
+# ==============================================================================
+
+[model_routing]
+enabled = true
+strategy = "frugalgpt"               # frugalgpt, round_robin, cheapest, fastest
+
+# Default resource limits per request
+[model_routing.defaults]
+token_limit = 20000
+cost_limit = 0.25                    # $0.25 default
+time_limit = 300                     # 5 minutes
+
+# FrugalGPT cascade configuration
+[model_routing.frugalgpt]
+# Quality threshold (0.0 - 1.0)
+# Responses below this quality score trigger cascade to next model
+quality_threshold = 0.7
+
+# Enable caching of model responses
+enable_caching = true
+cache_ttl = 1800                     # 30 minutes
+
+# Model cascade order (cheapest to most expensive)
+cascade = [
+    { name = "gpt-3.5-turbo", provider = "openai", max_tokens = 4096 },
+    { name = "gpt-4-turbo", provider = "openai", max_tokens = 8192 },
+    { name = "gpt-4", provider = "openai", max_tokens = 8192 },
+    { name = "claude-3-sonnet", provider = "anthropic", max_tokens = 8192 },
+    { name = "claude-3-opus", provider = "anthropic", max_tokens = 8192 },
+]
+
+# Quality scoring weights
+[model_routing.frugalgpt.scoring]
+coherence_weight = 0.3
+completeness_weight = 0.3
+relevance_weight = 0.4
+
+# Model provider configurations
+[model_routing.providers.openai]
+enabled = true
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://api.openai.com/v1"
+timeout = 60
+max_retries = 3
+retry_delay = 1
+
+[model_routing.providers.anthropic]
+enabled = true
+api_key_env = "ANTHROPIC_API_KEY"
+base_url = "https://api.anthropic.com"
+timeout = 60
+max_retries = 3
+retry_delay = 1
+
+# Model-specific settings
+[model_routing.models."gpt-3.5-turbo"]
+provider = "openai"
+context_window = 16385
+cost_per_1k_input = 0.0005
+cost_per_1k_output = 0.0015
+average_latency_ms = 500
+
+[model_routing.models."gpt-4-turbo"]
+provider = "openai"
+context_window = 128000
+cost_per_1k_input = 0.01
+cost_per_1k_output = 0.03
+average_latency_ms = 2000
+
+[model_routing.models."gpt-4"]
+provider = "openai"
+context_window = 8192
+cost_per_1k_input = 0.03
+cost_per_1k_output = 0.06
+average_latency_ms = 3000
+
+[model_routing.models."claude-3-sonnet"]
+provider = "anthropic"
+context_window = 200000
+cost_per_1k_input = 0.003
+cost_per_1k_output = 0.015
+average_latency_ms = 1500
+
+[model_routing.models."claude-3-opus"]
+provider = "anthropic"
+context_window = 200000
+cost_per_1k_input = 0.015
+cost_per_1k_output = 0.075
+average_latency_ms = 5000
+
+# ==============================================================================
+# RATE LIMITING
+# ==============================================================================
+
+[rate_limiting]
+enabled = true
+backend = "redis"                    # memory, redis
+
+# Global rate limits (requests per window)
+[rate_limiting.global]
+requests_per_second = 1000           # High limit for development
+burst_size = 100
+
+# Per-client rate limits (by API key or IP)
+[rate_limiting.per_client]
+requests_per_minute = 600            # 10 req/sec average
+requests_per_hour = 10000
+burst_size = 50
+
+# Per-endpoint rate limits
+[rate_limiting.endpoints."/api/v1/chat/completions"]
+requests_per_minute = 100
+burst_size = 20
+
+[rate_limiting.endpoints."/api/v1/agents/execute"]
+requests_per_minute = 50
+burst_size = 10
+
+# Cost-based rate limiting
+[rate_limiting.cost]
+enabled = true
+daily_limit = 10.0                   # $10 daily limit per client
+monthly_limit = 100.0                # $100 monthly limit per client
+
+# Rate limit response headers
+[rate_limiting.headers]
+include_limit = true
+include_remaining = true
+include_reset = true
+
+# ==============================================================================
+# SECURITY SETTINGS
+# ==============================================================================
+
+[security]
+# Encryption
+encryption_key_env = "APEX_ENCRYPTION_KEY"
+
+# JWT Authentication
+[security.jwt]
+secret_env = "JWT_SECRET"
+algorithm = "HS256"                  # HS256, HS384, HS512, RS256
+issuer = "apex-dev"
+audience = ["apex-api"]
+expiry_hours = 24
+refresh_expiry_days = 7
+include_user_claims = true
+
+# API Key Authentication
+[security.api_keys]
+enabled = true
+header_name = "X-API-Key"
+hash_algorithm = "argon2"            # bcrypt, argon2
+
+# Request security
+[security.request]
+# Input validation
+max_input_length = 100000            # Max characters in user input
+sanitize_html = true
+block_script_tags = true
+
+# Request signing (disabled for development)
+require_signature = false
+signature_header = "X-Signature"
+signature_algorithm = "hmac-sha256"
+
+# Audit logging
+[security.audit]
+enabled = true
+log_successful_auth = true
+log_failed_auth = true
+log_api_access = true
+log_sensitive_operations = true
+
+# Sandbox settings for tool execution
+[security.sandbox]
+enabled = true
+network_access = "restricted"        # none, restricted, full
+allowed_hosts = ["api.github.com", "api.openai.com", "api.anthropic.com"]
+filesystem_access = "none"           # none, read_only, restricted, full
+max_execution_time = 30              # seconds
+max_memory = "256MB"
+max_processes = 10
+
+# IP filtering (disabled for development)
+[security.ip_filter]
+enabled = false
+# allowlist = []
+# blocklist = []
+
+# ==============================================================================
+# FEATURE FLAGS
+# ==============================================================================
+
+[features]
+# Enable/disable features for development testing
+new_agent_runtime = true
+enhanced_caching = true
+model_fallback = true
+streaming_responses = true
+websocket_support = true
+grpc_api = true
+
+# Experimental features (may be unstable)
+[features.experimental]
+multi_agent_orchestration = true
+code_interpreter = true
+web_browsing = false
+file_upload = true
+
+# ==============================================================================
+# DEVELOPMENT-SPECIFIC SETTINGS
+# ==============================================================================
+
+[development]
+# Hot reload
+watch_config = true
+watch_interval = 5                   # Check for config changes every 5 seconds
+
+# Mock services (for testing without external dependencies)
+[development.mocks]
+mock_llm_responses = false           # Use mock LLM responses
+mock_llm_latency_ms = 100            # Simulated latency
+mock_external_apis = false
+
+# Debug endpoints (NEVER enable in production)
+[development.debug]
+enabled = true
+pprof_endpoint = "/debug/pprof"      # Go-style profiling
+heap_dump_endpoint = "/debug/heap"
+config_endpoint = "/debug/config"    # View current config
+stats_endpoint = "/debug/stats"      # Internal statistics

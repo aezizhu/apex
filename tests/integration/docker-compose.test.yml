@@ -1,0 +1,172 @@
+version: '3.9'
+
+# Integration Test Infrastructure for Project Apex
+# This docker-compose file provides isolated test infrastructure
+# with dedicated ports to avoid conflicts with development services.
+
+services:
+  # ══════════════════════════════════════════════════════════════════════════════
+  # APEX API SERVICE (Test Instance)
+  # ══════════════════════════════════════════════════════════════════════════════
+
+  apex-api-test:
+    build:
+      context: ../../src/backend/core
+      dockerfile: Dockerfile
+    container_name: apex-api-test
+    ports:
+      - "8081:8080"   # REST API (test port)
+      - "50052:50051" # gRPC (test port)
+    environment:
+      - RUST_LOG=info,apex_core=debug
+      - DATABASE_URL=postgres://apex:apex_test@postgres-test:5432/apex_test
+      - REDIS_URL=redis://redis-test:6379
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger-test:4317
+      - PROMETHEUS_PORT=9091
+      - APEX_ENVIRONMENT=test
+      - APEX_API_KEY=test-api-key
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_started
+    networks:
+      - apex-test-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # APEX WORKER SERVICE (Test Instance)
+  # ══════════════════════════════════════════════════════════════════════════════
+
+  apex-worker-test:
+    build:
+      context: ../../src/backend/agents
+      dockerfile: Dockerfile
+    container_name: apex-worker-test
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgres://apex:apex_test@postgres-test:5432/apex_test
+      - REDIS_URL=redis://redis-test:6379
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger-test:4317
+      - APEX_ENVIRONMENT=test
+      - APEX_BACKEND_HOST=apex-api-test
+      - APEX_BACKEND_HTTP_PORT=8080
+      # Test LLM keys (use mock provider for tests)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-key}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-test-key}
+    depends_on:
+      apex-api-test:
+        condition: service_healthy
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_started
+    networks:
+      - apex-test-network
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # DATABASE (Test Instance)
+  # ══════════════════════════════════════════════════════════════════════════════
+
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: apex-postgres-test
+    environment:
+      - POSTGRES_USER=apex
+      - POSTGRES_PASSWORD=apex_test
+      - POSTGRES_DB=apex_test
+    ports:
+      - "5433:5432"  # Test port to avoid conflict
+    volumes:
+      - postgres-test-data:/var/lib/postgresql/data
+      - ../../src/backend/core/migrations:/docker-entrypoint-initdb.d:ro
+    networks:
+      - apex-test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apex -d apex_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # REDIS (Test Instance)
+  # ══════════════════════════════════════════════════════════════════════════════
+
+  redis-test:
+    image: redis:7-alpine
+    container_name: apex-redis-test
+    ports:
+      - "6380:6379"  # Test port to avoid conflict
+    command: redis-server --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
+    networks:
+      - apex-test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # OBSERVABILITY (Optional for debugging)
+  # ══════════════════════════════════════════════════════════════════════════════
+
+  jaeger-test:
+    image: jaegertracing/all-in-one:1.53
+    container_name: apex-jaeger-test
+    ports:
+      - "16687:16686" # Jaeger UI (test port)
+      - "4319:4317"   # OTLP gRPC (test port)
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - apex-test-network
+    profiles:
+      - debug
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NETWORKS
+# ══════════════════════════════════════════════════════════════════════════════
+
+networks:
+  apex-test-network:
+    driver: bridge
+    name: apex-test-network
+
+# ══════════════════════════════════════════════════════════════════════════════
+# VOLUMES
+# ══════════════════════════════════════════════════════════════════════════════
+
+volumes:
+  postgres-test-data:
+    name: apex-postgres-test-data

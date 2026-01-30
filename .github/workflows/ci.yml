@@ -1,0 +1,601 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Project Apex - Continuous Integration Pipeline
+# ══════════════════════════════════════════════════════════════════════════════
+# Runs on all pushes to main/develop and pull requests to main
+# Includes: Rust, Python, Frontend linting, testing, building, and integration tests
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: "-Dwarnings"
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+jobs:
+  # ════════════════════════════════════════════════════════════════════════════
+  # Change Detection
+  # ════════════════════════════════════════════════════════════════════════════
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.changes.outputs.rust }}
+      python: ${{ steps.changes.outputs.python }}
+      frontend: ${{ steps.changes.outputs.frontend }}
+      infra: ${{ steps.changes.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            rust:
+              - 'src/backend/core/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            python:
+              - 'src/backend/agents/**'
+              - 'sdk/python/**'
+            frontend:
+              - 'src/frontend/**'
+              - 'sdk/typescript/**'
+            infra:
+              - 'infra/**'
+              - 'docker-compose.yml'
+              - '.github/workflows/**'
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Rust Backend
+  # ════════════════════════════════════════════════════════════════════════════
+  rust-fmt:
+    name: Rust Format
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        working-directory: src/backend/core
+        run: cargo fmt --all -- --check
+
+  rust-clippy:
+    name: Rust Clippy
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install protobuf compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src/backend/core -> target
+          cache-on-failure: true
+
+      - name: Run Clippy
+        working-directory: src/backend/core
+        run: cargo clippy --all-targets --all-features -- -D warnings -D clippy::all -D clippy::pedantic -A clippy::module_name_repetitions
+
+  rust-test:
+    name: Rust Tests
+    runs-on: ubuntu-latest
+    needs: [changes, rust-fmt, rust-clippy]
+    if: needs.changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch'
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: apex
+          POSTGRES_PASSWORD: apex_test_secret
+          POSTGRES_DB: apex_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protobuf compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src/backend/core -> target
+          cache-on-failure: true
+
+      - name: Run tests with coverage
+        working-directory: src/backend/core
+        env:
+          DATABASE_URL: postgres://apex:apex_test_secret@localhost:5432/apex_test
+          REDIS_URL: redis://localhost:6379
+          RUST_LOG: debug
+        run: |
+          cargo llvm-cov --all-features --lcov --output-path lcov.info
+          cargo llvm-cov report --json --output-path coverage.json
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: src/backend/core/lcov.info
+          flags: rust
+          name: rust-coverage
+          fail_ci_if_error: false
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage
+          path: src/backend/core/lcov.info
+          retention-days: 7
+
+  rust-build:
+    name: Rust Build
+    runs-on: ubuntu-latest
+    needs: rust-test
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install protobuf compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get install -y musl-tools
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src/backend/core -> target
+          cache-on-failure: true
+
+      - name: Build release
+        working-directory: src/backend/core
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apex-server-${{ matrix.target }}
+          path: src/backend/core/target/${{ matrix.target }}/release/apex-server
+          retention-days: 7
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Python Agent Workers
+  # ════════════════════════════════════════════════════════════════════════════
+  python-lint:
+    name: Python Lint
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.python == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        working-directory: src/backend/agents
+        run: |
+          uv pip install --system ruff mypy
+          uv pip install --system -e ".[dev]"
+
+      - name: Ruff lint
+        working-directory: src/backend/agents
+        run: ruff check . --output-format=github
+
+      - name: Ruff format check
+        working-directory: src/backend/agents
+        run: ruff format --check .
+
+      - name: Type check with mypy
+        working-directory: src/backend/agents
+        run: mypy apex_agents --ignore-missing-imports
+
+  python-test:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    needs: [changes, python-lint]
+    if: needs.changes.outputs.python == 'true' || github.event_name == 'workflow_dispatch'
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: src/backend/agents/pyproject.toml
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        working-directory: src/backend/agents
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Run tests with coverage
+        working-directory: src/backend/agents
+        env:
+          REDIS_URL: redis://localhost:6379
+        run: |
+          pytest --cov=apex_agents --cov-report=xml --cov-report=html --cov-branch \
+            -v --tb=short --junitxml=junit.xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: src/backend/agents/coverage.xml
+          flags: python
+          name: python-coverage
+          fail_ci_if_error: false
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-test-results
+          path: |
+            src/backend/agents/junit.xml
+            src/backend/agents/htmlcov/
+          retention-days: 7
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Frontend Dashboard
+  # ════════════════════════════════════════════════════════════════════════════
+  frontend-lint:
+    name: Frontend Lint
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: src/frontend
+        run: npm ci
+
+      - name: ESLint
+        working-directory: src/frontend
+        run: npm run lint -- --format=stylish
+
+      - name: Prettier check
+        working-directory: src/frontend
+        run: npx prettier --check "src/**/*.{ts,tsx,css}"
+
+      - name: Type check
+        working-directory: src/frontend
+        run: npx tsc --noEmit
+
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    needs: [changes, frontend-lint]
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: src/frontend
+        run: npm ci
+
+      - name: Run unit tests with coverage
+        working-directory: src/frontend
+        run: npm run test:coverage -- --reporter=verbose
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: src/frontend/coverage/lcov.info
+          flags: frontend
+          name: frontend-coverage
+          fail_ci_if_error: false
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: src/frontend/coverage/
+          retention-days: 7
+
+  frontend-e2e:
+    name: Frontend E2E Tests
+    runs-on: ubuntu-latest
+    needs: frontend-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: src/frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: src/frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Build frontend
+        working-directory: src/frontend
+        run: npm run build
+
+      - name: Run E2E tests
+        working-directory: src/frontend
+        run: npm run test:e2e -- --project=chromium
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: src/frontend/playwright-report/
+          retention-days: 7
+
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    needs: [frontend-test, frontend-e2e]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: src/frontend
+        run: npm ci
+
+      - name: Build production
+        working-directory: src/frontend
+        env:
+          NODE_ENV: production
+        run: npm run build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: src/frontend/dist
+          retention-days: 7
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Docker Build
+  # ════════════════════════════════════════════════════════════════════════════
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [rust-build, python-test, frontend-build]
+    if: always() && !cancelled() && !contains(needs.*.result, 'failure')
+    strategy:
+      matrix:
+        include:
+          - image: api
+            context: .
+            dockerfile: infra/docker/Dockerfile.api
+          - image: worker
+            context: src/backend/agents
+            dockerfile: src/backend/agents/Dockerfile
+          - image: dashboard
+            context: src/frontend
+            dockerfile: src/frontend/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.image }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          tags: apex/${{ matrix.image }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=cacheonly
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Integration Tests
+  # ════════════════════════════════════════════════════════════════════════════
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: always() && !cancelled() && !contains(needs.*.result, 'failure')
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: apex
+          POSTGRES_PASSWORD: apex_test_secret
+          POSTGRES_DB: apex_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Rust binary
+        uses: actions/download-artifact@v4
+        with:
+          name: apex-server-x86_64-unknown-linux-gnu
+          path: ./bin
+        continue-on-error: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install test dependencies
+        run: |
+          pip install httpx pytest pytest-asyncio
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgres://apex:apex_test_secret@localhost:5432/apex_test
+        run: |
+          # Apply migrations
+          if [ -f bin/apex-server ]; then
+            chmod +x bin/apex-server
+            # Run migrations if the binary supports it
+          fi
+          echo "Migrations would run here"
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgres://apex:apex_test_secret@localhost:5432/apex_test
+          REDIS_URL: redis://localhost:6379
+          API_URL: http://localhost:8080
+        run: |
+          if [ -d tests/integration ]; then
+            pytest tests/integration -v --tb=short
+          else
+            echo "No integration tests found - skipping"
+          fi
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Final Status Check
+  # ════════════════════════════════════════════════════════════════════════════
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs:
+      - rust-build
+      - python-test
+      - frontend-build
+      - docker-build
+      - integration-test
+    if: always()
+    steps:
+      - name: Check CI status
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "CI failed"
+            exit 1
+          fi
+          if [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "CI was cancelled"
+            exit 1
+          fi
+          echo "CI passed successfully"

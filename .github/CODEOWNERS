@@ -1,0 +1,127 @@
+# CODEOWNERS - Define code owners for automatic review requests
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# =============================================================================
+# Global Owners
+# =============================================================================
+# These owners will be requested for review on all files unless a more specific
+# match is defined below. Order matters - later rules take precedence.
+
+*                                   @aezi
+
+# =============================================================================
+# Documentation
+# =============================================================================
+
+*.md                                @aezi
+/docs/                              @aezi
+LICENSE                             @aezi
+CHANGELOG.md                        @aezi
+
+# =============================================================================
+# Configuration Files
+# =============================================================================
+
+# Project Configuration
+*.json                              @aezi
+*.yaml                              @aezi
+*.yml                               @aezi
+*.toml                              @aezi
+*.ini                               @aezi
+*.config.js                         @aezi
+*.config.ts                         @aezi
+
+# Editor/IDE Configuration
+.editorconfig                       @aezi
+.vscode/                            @aezi
+.idea/                              @aezi
+
+# =============================================================================
+# CI/CD & DevOps
+# =============================================================================
+
+/.github/                           @aezi
+/.github/workflows/                 @aezi
+/.github/ISSUE_TEMPLATE/            @aezi
+/.github/PULL_REQUEST_TEMPLATE.md   @aezi
+Dockerfile                          @aezi
+docker-compose*.yml                 @aezi
+.dockerignore                       @aezi
+Makefile                            @aezi
+
+# =============================================================================
+# Security-Sensitive Files
+# =============================================================================
+# These files require extra scrutiny
+
+.env*                               @aezi
+*.pem                               @aezi
+*.key                               @aezi
+*secret*                            @aezi
+*credential*                        @aezi
+
+# =============================================================================
+# Build & Dependencies
+# =============================================================================
+
+package.json                        @aezi
+package-lock.json                   @aezi
+yarn.lock                           @aezi
+pnpm-lock.yaml                      @aezi
+requirements.txt                    @aezi
+Pipfile                             @aezi
+Pipfile.lock                        @aezi
+Gemfile                             @aezi
+Gemfile.lock                        @aezi
+go.mod                              @aezi
+go.sum                              @aezi
+Cargo.toml                          @aezi
+Cargo.lock                          @aezi
+
+# =============================================================================
+# Source Code by Directory
+# =============================================================================
+# Add project-specific directory owners below
+# Examples:
+# /src/api/                         @api-team
+# /src/frontend/                    @frontend-team
+# /src/backend/                     @backend-team
+# /src/core/                        @core-team
+# /src/auth/                        @security-team
+
+/src/                               @aezi
+/lib/                               @aezi
+/app/                               @aezi
+/packages/                          @aezi
+
+# =============================================================================
+# Testing
+# =============================================================================
+
+/tests/                             @aezi
+/test/                              @aezi
+/__tests__/                         @aezi
+*.test.js                           @aezi
+*.test.ts                           @aezi
+*.spec.js                           @aezi
+*.spec.ts                           @aezi
+jest.config.*                       @aezi
+vitest.config.*                     @aezi
+cypress.config.*                    @aezi
+playwright.config.*                 @aezi
+
+# =============================================================================
+# Note: Customize this file based on your team structure
+# =============================================================================
+#
+# To add team-based ownership:
+# 1. Create GitHub teams in your organization
+# 2. Replace @aezi with @org/team-name where appropriate
+#
+# Example team structure:
+# @org/frontend-team    - Frontend engineers
+# @org/backend-team     - Backend engineers
+# @org/devops-team      - DevOps/Infrastructure
+# @org/security-team    - Security reviewers
+# @org/docs-team        - Documentation maintainers
+# @org/core-maintainers - Core project maintainers
