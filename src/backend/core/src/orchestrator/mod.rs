@@ -173,6 +173,11 @@ impl SwarmOrchestrator {
         id
     }
 
+    /// Deregister an agent from the orchestrator.
+    pub fn deregister_agent(&self, agent_id: AgentId) -> bool {
+        self.agents.remove(&agent_id).is_some()
+    }
+
     /// Submit a DAG for execution.
     pub async fn submit_dag(&self, dag: TaskDAG) -> Result<Uuid> {
         let dag_id = dag.id();

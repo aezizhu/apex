@@ -49,6 +49,7 @@ use std::sync::Arc;
 
 use crate::orchestrator::SwarmOrchestrator;
 use crate::db::Database;
+use crate::plugins::PluginRegistry;
 
 pub use versioning::{
     ApiVersion, ExtractedVersion, Version, VersionConfig, VersionError,
@@ -60,6 +61,16 @@ pub use versioning::{
 pub struct AppState {
     pub orchestrator: Arc<SwarmOrchestrator>,
     pub db: Arc<Database>,
+    pub plugin_registry: Option<PluginRegistry>,
+}
+
+impl AppState {
+    /// Get the plugin registry, creating a default one if not configured.
+    pub fn plugin_registry(&self) -> PluginRegistry {
+        self.plugin_registry
+            .clone()
+            .unwrap_or_else(|| PluginRegistry::new("plugins"))
+    }
 }
 
 /// Build the API router with versioning support.

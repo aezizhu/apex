@@ -9,6 +9,7 @@ use axum::{
 };
 
 use crate::api::{handlers, AppState};
+use super::plugins;
 
 /// V1 API prefix.
 pub const V1_PREFIX: &str = "/api/v1";
@@ -42,6 +43,15 @@ pub const V1_PREFIX: &str = "/api/v1";
 /// - `GET /api/v1/contracts` - List all contracts
 /// - `GET /api/v1/contracts/:id` - Get contract by ID
 ///
+/// ## Plugins
+/// - `GET /api/v1/plugins` - List all plugins
+/// - `GET /api/v1/plugins/:name` - Get plugin details
+/// - `POST /api/v1/plugins/discover` - Trigger plugin discovery
+/// - `POST /api/v1/plugins/:name/install` - Install a plugin
+/// - `POST /api/v1/plugins/:name/enable` - Enable a plugin
+/// - `POST /api/v1/plugins/:name/disable` - Disable a plugin
+/// - `POST /api/v1/plugins/:name/uninstall` - Uninstall a plugin
+///
 /// ## System
 /// - `GET /api/v1/stats` - Get system statistics
 pub fn v1_router() -> Router<AppState> {
@@ -65,6 +75,14 @@ pub fn v1_router() -> Router<AppState> {
         // Contract endpoints
         .route("/contracts", get(handlers::list_contracts))
         .route("/contracts/:id", get(handlers::get_contract))
+        // Plugin endpoints
+        .route("/plugins", get(plugins::list_plugins))
+        .route("/plugins/discover", post(plugins::discover_plugins))
+        .route("/plugins/:name", get(plugins::get_plugin))
+        .route("/plugins/:name/install", post(plugins::install_plugin))
+        .route("/plugins/:name/enable", post(plugins::enable_plugin))
+        .route("/plugins/:name/disable", post(plugins::disable_plugin))
+        .route("/plugins/:name/uninstall", post(plugins::uninstall_plugin))
         // Stats
         .route("/stats", get(handlers::get_system_stats))
 }
@@ -91,6 +109,15 @@ pub mod paths {
     // Contract routes
     pub const CONTRACTS: &str = "/api/v1/contracts";
     pub const CONTRACT: &str = "/api/v1/contracts/:id";
+
+    // Plugin routes
+    pub const PLUGINS: &str = "/api/v1/plugins";
+    pub const PLUGIN: &str = "/api/v1/plugins/:name";
+    pub const PLUGIN_DISCOVER: &str = "/api/v1/plugins/discover";
+    pub const PLUGIN_INSTALL: &str = "/api/v1/plugins/:name/install";
+    pub const PLUGIN_ENABLE: &str = "/api/v1/plugins/:name/enable";
+    pub const PLUGIN_DISABLE: &str = "/api/v1/plugins/:name/disable";
+    pub const PLUGIN_UNINSTALL: &str = "/api/v1/plugins/:name/uninstall";
 
     // System routes
     pub const STATS: &str = "/api/v1/stats";

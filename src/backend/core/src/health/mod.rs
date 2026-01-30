@@ -12,6 +12,7 @@ pub use checker::*;
 pub use routes::*;
 
 use std::sync::Arc;
+use std::time::Instant;
 
 /// Health check configuration
 #[derive(Debug, Clone)]
@@ -33,6 +34,9 @@ impl Default for HealthConfig {
                 "database".into(),
                 "redis".into(),
                 "workers".into(),
+                "disk_space".into(),
+                "memory".into(),
+                "database_backup".into(),
             ],
         }
     }
@@ -42,6 +46,7 @@ impl Default for HealthConfig {
 pub struct HealthService {
     config: HealthConfig,
     checkers: Vec<Arc<dyn HealthChecker>>,
+    started_at: Instant,
 }
 
 impl HealthService {
@@ -49,6 +54,7 @@ impl HealthService {
         Self {
             config,
             checkers: Vec::new(),
+            started_at: Instant::now(),
         }
     }
 
@@ -56,30 +62,29 @@ impl HealthService {
         self.checkers.push(checker);
     }
 
+    /// Run all health checks concurrently with timeout per check.
     pub async fn check_health(&self) -> HealthReport {
-        let mut components = Vec::new();
-        let mut overall_status = HealthStatus::Healthy;
+        let futures: Vec<_> = self
+            .checkers
+            .iter()
+            .map(|checker| {
+                let checker = checker.clone();
+                let timeout = self.config.check_timeout;
+                async move {
+                    match tokio::time::timeout(timeout, checker.check()).await {
+                        Ok(health) => health,
+                        Err(_) => ComponentHealth::unhealthy(checker.name())
+                            .with_message("Health check timed out"),
+                    }
+                }
+            })
+            .collect();
 
-        for checker in &self.checkers {
-            let result = tokio::time::timeout(
-                self.config.check_timeout,
-                checker.check(),
-            )
-            .await;
-
-            let component_health = match result {
-                Ok(health) => health,
-                Err(_) => ComponentHealth::unhealthy(checker.name())
-                    .with_message("Health check timed out"),
-            };
-
-            // Update overall status
-            overall_status = overall_status.combine(component_health.status);
-            components.push(component_health);
-        }
+        let components = futures::future::join_all(futures).await;
 
         HealthReport::new()
             .with_service("apex-core")
+            .with_uptime(self.started_at.elapsed())
             .with_components(components)
     }
 
@@ -91,5 +96,10 @@ impl HealthService {
     pub async fn is_live(&self) -> bool {
         // Liveness is simpler - just check if the service is running
         true
+    }
+
+    /// Get the service uptime.
+    pub fn uptime(&self) -> std::time::Duration {
+        self.started_at.elapsed()
     }
 }
