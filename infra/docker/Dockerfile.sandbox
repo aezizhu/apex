@@ -1,15 +1,18 @@
+# syntax=docker/dockerfile:1
+
 # Sandbox container for tool execution
 # Minimal, secure environment for running untrusted code
 
 FROM python:3.11-slim-bookworm
 
-# Security: Don't run as root
-RUN useradd -r -u 1000 -m sandbox
-WORKDIR /home/sandbox
+LABEL org.opencontainers.image.source="https://github.com/apex/apex"
+LABEL org.opencontainers.image.description="Apex Sandbox - Isolated code execution"
+LABEL org.opencontainers.image.licenses="MIT"
 
-# Install minimal dependencies
+# Install minimal dependencies including tini
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    tini \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -23,8 +26,11 @@ RUN pip install --no-cache-dir \
     lxml
 
 # Set resource limits via environment
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Create non-root user with group
+RUN groupadd -r sandbox && useradd -r -g sandbox -u 1000 -m sandbox
 
 # Switch to non-root user
 USER sandbox
@@ -32,5 +38,6 @@ USER sandbox
 # Set working directory
 WORKDIR /tmp/sandbox
 
-# Default command (can be overridden)
+# Use tini as init system
+ENTRYPOINT ["tini", "--"]
 CMD ["python3"]

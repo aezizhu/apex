@@ -12,19 +12,25 @@ global:
 api:
   replicaCount: 3
 
+  image:
+    pullPolicy: Always
+
+  terminationGracePeriodSeconds: 60
+
   resources:
     requests:
-      memory: "512Mi"
-      cpu: "500m"
+      memory: "1Gi"
+      cpu: "1"
     limits:
-      memory: "2Gi"
-      cpu: "2"
+      memory: "4Gi"
+      cpu: "4"
 
   autoscaling:
     enabled: true
     minReplicas: 3
     maxReplicas: 20
     targetCPUUtilizationPercentage: 65
+    targetMemoryUtilizationPercentage: 80
 
   podDisruptionBudget:
     enabled: true
@@ -84,13 +90,18 @@ worker:
   workersPerPod: 1
   agentsPerWorker: 5
 
+  image:
+    pullPolicy: Always
+
+  terminationGracePeriodSeconds: 120
+
   resources:
     requests:
-      memory: "256Mi"
-      cpu: "250m"
+      memory: "512Mi"
+      cpu: "500m"
     limits:
-      memory: "1Gi"
-      cpu: "1"
+      memory: "2Gi"
+      cpu: "2"
 
   autoscaling:
     enabled: true

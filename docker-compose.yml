@@ -21,19 +21,26 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     networks:
       - apex-internal
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
     deploy:
       resources:
         limits:
           cpus: '2'
           memory: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   apex-worker:
     build:
@@ -47,17 +54,32 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     depends_on:
-      - apex-api
-      - postgres
-      - redis
+      apex-api:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - apex-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     deploy:
       replicas: 3
       resources:
         limits:
           cpus: '1'
           memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   apex-dashboard:
     build:
@@ -67,14 +89,27 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - apex-api
+      apex-api:
+        condition: service_healthy
     networks:
       - apex-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ══════════════════════════════════════════════════════════════════════════════
   # DATA STORES
@@ -94,16 +129,23 @@ services:
       - ./src/backend/core/migrations:/docker-entrypoint-initdb.d:ro
     networks:
       - apex-internal
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U apex -d apex"]
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 10s
     deploy:
       resources:
         limits:
           cpus: '1'
           memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   redis:
     image: redis:7-alpine
@@ -115,11 +157,23 @@ services:
       - redis-data:/data
     networks:
       - apex-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ══════════════════════════════════════════════════════════════════════════════
   # OBSERVABILITY STACK
@@ -136,11 +190,23 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
     networks:
       - apex-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:16686/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   prometheus:
     image: prom/prometheus:v2.48.1
@@ -159,11 +225,23 @@ services:
       - '--web.enable-lifecycle'
     networks:
       - apex-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   grafana:
     image: grafana/grafana:10.2.3
@@ -180,15 +258,29 @@ services:
       - ./infra/monitoring/dashboards:/var/lib/grafana/dashboards/monitoring:ro
       - grafana-data:/var/lib/grafana
     depends_on:
-      - prometheus
-      - jaeger
+      prometheus:
+        condition: service_healthy
+      jaeger:
+        condition: service_healthy
     networks:
       - apex-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   loki:
     image: grafana/loki:2.9.3
@@ -201,11 +293,23 @@ services:
     command: -config.file=/etc/loki/local-config.yaml
     networks:
       - apex-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   # ══════════════════════════════════════════════════════════════════════════════
   # TOOL SANDBOX (Isolated execution environment)
@@ -218,6 +322,13 @@ services:
     container_name: apex-sandbox
     networks:
       - apex-sandbox
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "print('ok')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     cap_drop:
       - ALL
     security_opt:
@@ -231,6 +342,11 @@ services:
           cpus: '1'
           memory: 512M
           pids: 100
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # NETWORKS
