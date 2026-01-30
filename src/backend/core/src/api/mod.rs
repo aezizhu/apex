@@ -22,6 +22,16 @@
 //! - Responses include `Sunset: <date>` header with sunset date
 //! - Responses include `X-API-Warn` header with migration guidance
 //!
+//! # Content-Type Requirements
+//!
+//! All POST, PUT, and PATCH requests must include `Content-Type: application/json`.
+//! Requests without this header will receive a 415 Unsupported Media Type response.
+//!
+//! # Input Validation
+//!
+//! All string inputs are sanitized (trimmed, HTML stripped, null bytes removed).
+//! Request bodies are validated with descriptive error messages for each field.
+//!
 //! # Current Versions
 //!
 //! - **V1** (Current/Stable): Full production support
@@ -68,16 +78,6 @@ pub use versioning::{
 pub struct AppState {
     pub orchestrator: Arc<SwarmOrchestrator>,
     pub db: Arc<Database>,
-    pub plugin_registry: Option<PluginRegistry>,
-}
-
-impl AppState {
-    /// Get the plugin registry, creating a default one if not configured.
-    pub fn plugin_registry(&self) -> PluginRegistry {
-        self.plugin_registry
-            .clone()
-            .unwrap_or_else(|| PluginRegistry::new("plugins"))
-    }
 }
 
 /// Build the API router with versioning support.
@@ -88,6 +88,8 @@ impl AppState {
 /// - WebSocket endpoint (unversioned)
 /// - V1 API routes under `/api/v1/`
 /// - V2 API routes under `/api/v2/`
+/// - Content-Type validation middleware
+/// - API version response headers
 /// - Versioning middleware with deprecation headers
 ///
 /// # Example
@@ -116,7 +118,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/v1", v1::routes::v1_router())
         // V2 API (preview)
         .nest("/api/v2", v2::v2_router())
-        // Middleware
+        // Middleware - API validation and headers
         .layer(SecurityHeadersLayer::new(SecurityHeadersConfig::default()))
         .layer(AuditLayer::new(AuditConfig::default()))
         .layer(CsrfLayer::new(CsrfConfig::default()))
@@ -149,12 +151,14 @@ pub fn build_router_with_config(state: AppState, version_config: VersionConfig) 
         .nest("/api/v1", v1::routes::v1_router())
         // V2 API (preview)
         .nest("/api/v2", v2::v2_router())
-        // Middleware
+        // Middleware - API validation and headers
         .layer(SecurityHeadersLayer::new(SecurityHeadersConfig::default()))
         .layer(AuditLayer::new(AuditConfig::default()))
         .layer(CsrfLayer::new(CsrfConfig::default()))
         .layer(InputSanitizerLayer::new(SanitizeConfig::default()))
         .layer(RequestSizeLayer::new(RequestSizeConfig::default()))
+        .layer(axum_middleware::from_fn(middleware::api_version_headers))
+        .layer(axum_middleware::from_fn(middleware::content_type_validation))
         .layer(VersioningLayer::new(version_config))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
