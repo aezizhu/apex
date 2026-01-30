@@ -111,6 +111,10 @@ class BaseApexClient:
     ) -> None:
         """Initialise connection settings shared by sync and async clients.
 
+        Exactly one of *api_key* or *token* should be provided for
+        authenticated requests.  If both are supplied, *api_key* takes
+        precedence.
+
         Args:
             base_url: Root URL of the Apex API (e.g. ``http://localhost:8080``).
                 A trailing slash is stripped automatically.
@@ -218,6 +222,8 @@ class ApexClient(BaseApexClient):
     All public methods return Pydantic model instances parsed from the JSON
     response body.  Transient server/network errors are retried automatically
     (up to *max_retries* times with exponential back-off).
+
+    See :class:`AsyncApexClient` for the ``async``/``await`` variant.
     """
 
     def __init__(

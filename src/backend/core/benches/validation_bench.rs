@@ -1,10 +1,8 @@
 //! Benchmarks for the request validation framework.
-
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use apex_core::validation::{validate_field, validate_request, Email, MaxItems, MaxLength, MinLength, Pattern, Range, Required, UniqueItems, Validate, ValidationResult, ValidationRule};
 
 struct CreateTaskRequest { name: String, description: String, priority: i32, tags: Vec<String> }
-
 impl Validate for CreateTaskRequest {
     fn validate(&self) -> ValidationResult<()> {
         validate_request()
@@ -15,20 +13,12 @@ impl Validate for CreateTaskRequest {
             .result()
     }
 }
-
-fn valid_request() -> CreateTaskRequest {
-    CreateTaskRequest { name: "Benchmark Task".into(), description: "A task for benchmarking".into(), priority: 5, tags: vec!["bench".into(), "test".into()] }
-}
-
-fn invalid_request() -> CreateTaskRequest {
-    CreateTaskRequest { name: "".into(), description: "x".repeat(2000), priority: 99, tags: vec!["a".into(), "a".into()] }
-}
+fn valid_request() -> CreateTaskRequest { CreateTaskRequest { name: "Benchmark Task".into(), description: "A task for benchmarking".into(), priority: 5, tags: vec!["bench".into(), "test".into()] } }
+fn invalid_request() -> CreateTaskRequest { CreateTaskRequest { name: "".into(), description: "x".repeat(2000), priority: 99, tags: vec!["a".into(), "a".into()] } }
 
 fn bench_validation_individual_rules(c: &mut Criterion) {
     let mut group = c.benchmark_group("validation_individual_rules");
-    let valid_str = "hello@example.com".to_string();
-    let empty_str = "".to_string();
-    let long_str = "x".repeat(500);
+    let valid_str = "hello@example.com".to_string(); let empty_str = "".to_string(); let long_str = "x".repeat(500);
     group.bench_function("required_pass", |b| { b.iter(|| black_box(Required.validate(&valid_str))); });
     group.bench_function("required_fail", |b| { b.iter(|| black_box(Required.validate(&empty_str))); });
     group.bench_function("email_pass", |b| { b.iter(|| black_box(Email.validate(&valid_str))); });
@@ -43,8 +33,7 @@ fn bench_validation_individual_rules(c: &mut Criterion) {
 
 fn bench_validation_pattern(c: &mut Criterion) {
     let mut group = c.benchmark_group("validation_pattern");
-    let valid = "ABC".to_string();
-    let invalid = "abc123".to_string();
+    let valid = "ABC".to_string(); let invalid = "abc123".to_string();
     group.bench_function("compile_and_validate", |b| { b.iter(|| { let p = Pattern::new(r"^[A-Z]{3}$").unwrap(); black_box(p.validate(&valid)) }); });
     group.bench_function("precompiled_pass", |b| { let p = Pattern::new(r"^[A-Z]{3}$").unwrap(); b.iter(|| black_box(p.validate(&valid))); });
     group.bench_function("precompiled_fail", |b| { let p = Pattern::new(r"^[A-Z]{3}$").unwrap(); b.iter(|| black_box(p.validate(&invalid))); });
@@ -73,14 +62,8 @@ fn bench_validation_batch(c: &mut Criterion) {
     let mut group = c.benchmark_group("validation_batch");
     for batch_size in [10, 100, 1_000] {
         group.throughput(Throughput::Elements(batch_size as u64));
-        group.bench_with_input(BenchmarkId::new("valid", batch_size), &batch_size, |b, &n| {
-            let reqs: Vec<_> = (0..n).map(|_| valid_request()).collect();
-            b.iter(|| { for r in &reqs { black_box(r.validate()); } });
-        });
-        group.bench_with_input(BenchmarkId::new("mixed", batch_size), &batch_size, |b, &n| {
-            let reqs: Vec<_> = (0..n).map(|i| if i % 3 == 0 { invalid_request() } else { valid_request() }).collect();
-            b.iter(|| { for r in &reqs { black_box(r.validate()); } });
-        });
+        group.bench_with_input(BenchmarkId::new("valid", batch_size), &batch_size, |b, &n| { let reqs: Vec<_> = (0..n).map(|_| valid_request()).collect(); b.iter(|| { for r in &reqs { black_box(r.validate()); } }); });
+        group.bench_with_input(BenchmarkId::new("mixed", batch_size), &batch_size, |b, &n| { let reqs: Vec<_> = (0..n).map(|i| if i % 3 == 0 { invalid_request() } else { valid_request() }).collect(); b.iter(|| { for r in &reqs { black_box(r.validate()); } }); });
     }
     group.finish();
 }

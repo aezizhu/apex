@@ -15,6 +15,23 @@ info:
     - **Metrics**: System and performance metrics
     - **Health**: Service health and readiness checks
 
+    ## Content-Type Requirements
+
+    All POST, PUT, and PATCH requests must include `Content-Type: application/json`.
+    Requests without this header receive a 415 Unsupported Media Type response.
+
+    ## Input Validation
+
+    All string inputs are automatically sanitized (trimmed, HTML stripped, null bytes removed).
+    Request bodies are validated with per-field error messages. Validation failures return 422.
+
+    ## API Versioning Headers
+
+    All responses include:
+    - `X-API-Version`: Current API version (e.g., "1.0")
+    - `X-Request-Id`: Unique request identifier
+    - `X-Content-Type-Options`: Always "nosniff"
+
     ## Authentication
 
     The API supports two authentication methods:
@@ -90,6 +107,10 @@ tags:
     description: System statistics and overview
   - name: WebSocket
     description: Real-time WebSocket API
+  - name: Contracts
+    description: Agent-task contract management
+  - name: Stats
+    description: System statistics and overview
 
 security:
   - BearerAuth: []
@@ -538,7 +559,45 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  # ============================================================================
+  /tasks/{taskId}/status:
+    get:
+      tags:
+        - Tasks
+      summary: Get task status
+      description: Returns a lightweight status summary for a specific task.
+      operationId: getTaskStatus
+      parameters:
+        - $ref: '#/components/parameters/TaskIdParam'
+      responses:
+        '200':
+          description: Task status retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                      tokens_used:
+                        type: integer
+                      cost_dollars:
+                        type: number
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    # ============================================================================
   # Agents
   # ============================================================================
   /agents:
@@ -810,7 +869,53 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  # ============================================================================
+  /agents/{agentId}/stats:
+    get:
+      tags:
+        - Agents
+      summary: Get agent statistics
+      description: Returns detailed performance statistics for a specific agent.
+      operationId: getAgentStats
+      parameters:
+        - $ref: '#/components/parameters/AgentIdParam'
+      responses:
+        '200':
+          description: Agent statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      name:
+                        type: string
+                      tasks_completed:
+                        type: integer
+                      success_rate:
+                        type: number
+                      total_tokens:
+                        type: integer
+                      total_cost:
+                        type: number
+                      avg_latency_ms:
+                        type: number
+                      reputation_score:
+                        type: number
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    # ============================================================================
   # DAGs
   # ============================================================================
   /dags:
@@ -1233,7 +1338,100 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  # ============================================================================
+  /dags/{dagId}/execute:
+    post:
+      tags:
+        - DAGs
+      summary: Execute a DAG
+      description: Triggers execution of a DAG workflow.
+      operationId: executeDAG
+      parameters:
+        - $ref: '#/components/parameters/DAGIdParam'
+      responses:
+        '200':
+          description: DAG execution result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      dag_id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                      tasks_completed:
+                        type: integer
+                      tasks_failed:
+                        type: integer
+                      total_tokens:
+                        type: integer
+                      total_cost:
+                        type: number
+                      duration_ms:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /dags/{dagId}/status:
+    get:
+      tags:
+        - DAGs
+      summary: Get DAG execution status
+      description: Returns the current execution status including per-task breakdown.
+      operationId: getDAGStatus
+      parameters:
+        - $ref: '#/components/parameters/DAGIdParam'
+      responses:
+        '200':
+          description: DAG status retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      name:
+                        type: string
+                      status:
+                        type: string
+                      tasks:
+                        type: object
+                        properties:
+                          total:
+                            type: integer
+                          completed:
+                            type: integer
+                          failed:
+                            type: integer
+                          running:
+                            type: integer
+                          pending:
+                            type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    # ============================================================================
   # Approvals
   # ============================================================================
   /approvals:
@@ -1941,6 +2139,116 @@ paths:
                           failed_tasks: { type: integer }
                           total_tokens: { type: integer }
                           total_cost: { type: number, format: double }
+
+  /contracts:
+    get:
+      tags:
+        - Contracts
+      summary: List contracts
+      description: Returns a list of agent-task contracts.
+      operationId: listContracts
+      responses:
+        '200':
+          description: Contracts list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Contract'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /contracts/{contractId}:
+    get:
+      tags:
+        - Contracts
+      summary: Get contract details
+      description: Returns details of a specific contract.
+      operationId: getContract
+      parameters:
+        - name: contractId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Contract details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Contract'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /stats:
+    get:
+      tags:
+        - Stats
+      summary: Get system statistics
+      description: Returns system-wide orchestrator and database metrics.
+      operationId: getSystemStats
+      responses:
+        '200':
+          description: System statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      orchestrator:
+                        type: object
+                        properties:
+                          active_dags:
+                            type: integer
+                          registered_agents:
+                            type: integer
+                          active_contracts:
+                            type: integer
+                      database:
+                        type: object
+                        properties:
+                          total_tasks:
+                            type: integer
+                          completed_tasks:
+                            type: integer
+                          failed_tasks:
+                            type: integer
+                          running_tasks:
+                            type: integer
+                          total_tokens:
+                            type: integer
+                          total_cost:
+                            type: number
+                          agent_count:
+                            type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
 # ============================================================================
 # Components
@@ -2992,6 +3300,47 @@ components:
             type: string
           description: Filter by specific DAG IDs
 
+    Contract:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        parent_contract_id:
+          type: string
+          format: uuid
+          nullable: true
+        token_limit:
+          type: integer
+        cost_limit:
+          type: number
+        time_limit_seconds:
+          type: integer
+        api_call_limit:
+          type: integer
+        token_used:
+          type: integer
+        cost_used:
+          type: number
+        api_calls_used:
+          type: integer
+        status:
+          type: string
+          enum: [active, completed, violated, expired]
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+
   # --------------------------------------------------------------------------
   # Responses
   # --------------------------------------------------------------------------
@@ -3109,7 +3458,21 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
 
-    InternalServerError:
+    Conflict:
+      description: Conflict - Resource state prevents this operation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    UnsupportedMediaType:
+      description: Unsupported Media Type - Content-Type must be application/json
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+        InternalServerError:
       description: Internal server error
       content:
         application/json:
