@@ -8,6 +8,7 @@ use std::net::SocketAddr;
 use apex_core::{
     config::Config,
     db::Database,
+    db::health::DatabaseHealthMonitor,
     orchestrator::{SwarmOrchestrator, OrchestratorConfig},
     observability::{self, Tracer},
     api::{self, AppState},
@@ -52,9 +53,14 @@ async fn main() -> anyhow::Result<()> {
     let db = Arc::new(Database::new(&config.database.url).await?);
     tracing::info!("Connected to database");
 
-    // Run migrations
-    // db.migrate().await?;
-    // tracing::info!("Database migrations completed");
+    // Create database health monitor and run startup validation
+    let db_health_monitor = DatabaseHealthMonitor::new(
+        db.pool().clone(),
+        config.database.max_connections,
+        config.database.min_connections,
+    );
+    db_health_monitor.startup_validation().await?;
+    tracing::info!("Database startup validation passed (migrations applied, connectivity verified)");
 
     // Create tracer
     let tracer = Arc::new(Tracer::new("apex-server"));
