@@ -52,7 +52,12 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class BaseApexClient:
-    """Base class with shared configuration for Apex clients."""
+    """Base class with shared configuration for Apex clients.
+
+    Provides authentication header construction, error response handling,
+    and stores common configuration used by both :class:`ApexClient` and
+    :class:`AsyncApexClient`.  Not intended for direct instantiation.
+    """
 
     def __init__(
         self,
@@ -63,16 +68,24 @@ class BaseApexClient:
         max_retries: int = 3,
         retry_delay: float = 1.0,
     ) -> None:
-        """
-        Initialize the Apex client.
+        """Initialize the Apex client.
+
+        Exactly one of *api_key* or *token* should be provided for
+        authenticated requests.  If both are supplied, *api_key* takes
+        precedence.
 
         Args:
-            base_url: The base URL of the Apex API.
-            api_key: API key for authentication.
-            token: Bearer token for authentication (alternative to api_key).
-            timeout: Request timeout in seconds.
-            max_retries: Maximum number of retry attempts.
-            retry_delay: Initial delay between retries.
+            base_url: Base URL of the Apex API (e.g.
+                ``"https://api.apex.example.com"``).  Trailing slashes are
+                stripped automatically.
+            api_key: API key sent as an ``X-API-Key`` header.
+            token: Bearer token sent as an ``Authorization`` header
+                (alternative to *api_key*).
+            timeout: Per-request timeout in seconds (including retries).
+            max_retries: Maximum retry attempts for transient failures
+                (server errors, connection errors, timeouts).
+            retry_delay: Initial delay in seconds between retries.  Grows
+                exponentially via :func:`tenacity.wait_exponential`.
         """
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -82,7 +95,12 @@ class BaseApexClient:
         self.retry_delay = retry_delay
 
     def _get_headers(self) -> dict[str, str]:
-        """Get authentication headers."""
+        """Build default request headers including authentication.
+
+        Returns:
+            A dict with ``Content-Type``, ``Accept``, and the appropriate
+            authentication header (``X-API-Key`` or ``Authorization``).
+        """
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self.api_key:
             headers["X-API-Key"] = self.api_key
@@ -91,7 +109,24 @@ class BaseApexClient:
         return headers
 
     def _handle_error_response(self, response: httpx.Response) -> None:
-        """Handle error responses from the API."""
+        """Translate an HTTP error response into a typed SDK exception.
+
+        Maps HTTP status codes to specific exception classes:
+
+        - 401 -> :class:`ApexAuthenticationError`
+        - 403 -> :class:`ApexAuthorizationError`
+        - 404 -> :class:`ApexNotFoundError`
+        - 422 -> :class:`ApexValidationError`
+        - 429 -> :class:`ApexRateLimitError` (includes ``Retry-After``)
+        - 5xx -> :class:`ApexServerError`
+        - Other -> :class:`ApexAPIError`
+
+        Args:
+            response: The ``httpx.Response`` with a 4xx/5xx status code.
+
+        Raises:
+            ApexAPIError: Always raised (or one of its subclasses).
+        """
         status_code = response.status_code
         try:
             body = response.json()
@@ -122,7 +157,19 @@ class BaseApexClient:
 
 
 class ApexClient(BaseApexClient):
-    """Synchronous HTTP client for the Apex API."""
+    """Synchronous (blocking) HTTP client for the Apex API.
+
+    Wraps ``httpx.Client`` and provides typed methods for every Apex REST
+    endpoint (tasks, agents, DAGs, and approvals).  Includes automatic
+    retry logic with exponential back-off for transient errors.
+
+    Can be used as a context manager for automatic resource cleanup::
+
+        with ApexClient("https://api.apex.example.com", api_key="key") as client:
+            health = client.health()
+
+    See :class:`AsyncApexClient` for the ``async``/``await`` variant.
+    """
 
     def __init__(
         self,

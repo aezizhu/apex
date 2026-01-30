@@ -1119,4 +1119,232 @@ mod tests {
         assert_eq!(stats.entries, 1);
         assert!((stats.hit_rate - 0.5).abs() < 0.01);
     }
+
+    #[tokio::test]
+    async fn test_in_memory_get_expired_entry_returns_none() {
+        let backend = InMemoryBackend::new(InMemoryConfig {
+            max_capacity: 100,
+            ..Default::default()
+        });
+
+        let entry = CacheEntry {
+            data: b"expired data".to_vec(),
+            ttl: Some(Duration::from_millis(1)),
+            tags: vec![],
+            created_at: Utc::now() - chrono::Duration::seconds(10),
+        };
+
+        backend.set("expired-key", entry).await.unwrap();
+
+        let result = backend.get("expired-key").await.unwrap();
+        assert!(result.is_none(), "Expired entry should return None");
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_exists_returns_false_for_expired() {
+        let backend = InMemoryBackend::new(InMemoryConfig::default());
+
+        let entry = CacheEntry {
+            data: b"data".to_vec(),
+            ttl: Some(Duration::from_millis(1)),
+            tags: vec![],
+            created_at: Utc::now() - chrono::Duration::seconds(10),
+        };
+
+        backend.set("will-expire", entry).await.unwrap();
+
+        let exists = backend.exists("will-expire").await.unwrap();
+        assert!(!exists, "Expired key should not exist");
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_delete_nonexistent_returns_false() {
+        let backend = InMemoryBackend::new(InMemoryConfig::default());
+
+        let deleted = backend.delete("nonexistent-key").await.unwrap();
+        assert!(!deleted, "Deleting non-existent key should return false");
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_clear_removes_all_entries() {
+        let backend = InMemoryBackend::new(InMemoryConfig::default());
+
+        let entry = CacheEntry {
+            data: b"data".to_vec(),
+            ttl: Some(Duration::from_secs(60)),
+            tags: vec!["tag".to_string()],
+            created_at: Utc::now(),
+        };
+
+        backend.set("key1", entry.clone()).await.unwrap();
+        backend.set("key2", entry.clone()).await.unwrap();
+        backend.set("key3", entry).await.unwrap();
+
+        backend.clear().await.unwrap();
+
+        assert!(!backend.exists("key1").await.unwrap());
+        assert!(!backend.exists("key2").await.unwrap());
+        assert!(!backend.exists("key3").await.unwrap());
+
+        let stats = backend.stats().await.unwrap();
+        assert_eq!(stats.entries, 0);
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_overwrite_existing_key() {
+        let backend = InMemoryBackend::new(InMemoryConfig::default());
+
+        let entry1 = CacheEntry {
+            data: b"original".to_vec(),
+            ttl: Some(Duration::from_secs(60)),
+            tags: vec!["v1".to_string()],
+            created_at: Utc::now(),
+        };
+        backend.set("key", entry1).await.unwrap();
+
+        let entry2 = CacheEntry {
+            data: b"updated".to_vec(),
+            ttl: Some(Duration::from_secs(60)),
+            tags: vec!["v2".to_string()],
+            created_at: Utc::now(),
+        };
+        backend.set("key", entry2).await.unwrap();
+
+        let retrieved = backend.get("key").await.unwrap().unwrap();
+        assert_eq!(retrieved.data, b"updated");
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_delete_by_pattern() {
+        let backend = InMemoryBackend::new(InMemoryConfig::default());
+
+        let entry = CacheEntry {
+            data: b"data".to_vec(),
+            ttl: Some(Duration::from_secs(60)),
+            tags: vec![],
+            created_at: Utc::now(),
+        };
+
+        backend.set("user:1:profile", entry.clone()).await.unwrap();
+        backend.set("user:2:profile", entry.clone()).await.unwrap();
+        backend.set("task:1:status", entry).await.unwrap();
+
+        let deleted = backend.delete_by_pattern("^user:.*").await.unwrap();
+        assert_eq!(deleted, 2);
+
+        assert!(!backend.exists("user:1:profile").await.unwrap());
+        assert!(!backend.exists("user:2:profile").await.unwrap());
+        assert!(backend.exists("task:1:status").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_multiple_tags_per_entry() {
+        let backend = InMemoryBackend::new(InMemoryConfig::default());
+
+        let entry = CacheEntry {
+            data: b"data".to_vec(),
+            ttl: Some(Duration::from_secs(60)),
+            tags: vec!["project-a".to_string(), "urgent".to_string()],
+            created_at: Utc::now(),
+        };
+
+        backend.set("multi-tag-key", entry).await.unwrap();
+
+        let keys_by_project = backend.get_by_tag("project-a").await.unwrap();
+        assert!(keys_by_project.contains(&"multi-tag-key".to_string()));
+
+        let keys_by_urgent = backend.get_by_tag("urgent").await.unwrap();
+        assert!(keys_by_urgent.contains(&"multi-tag-key".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_backend_name() {
+        let backend = InMemoryBackend::new(InMemoryConfig::default());
+        assert_eq!(backend.name(), "in_memory");
+    }
+
+    #[test]
+    fn test_cache_entry_remaining_ttl() {
+        let entry = CacheEntry {
+            data: vec![1, 2, 3],
+            ttl: Some(Duration::from_secs(3600)),
+            tags: vec![],
+            created_at: Utc::now(),
+        };
+
+        let remaining = entry.remaining_ttl();
+        assert!(remaining.is_some());
+        // Should be close to 3600 seconds
+        assert!(remaining.unwrap().as_secs() > 3590);
+    }
+
+    #[test]
+    fn test_cache_entry_remaining_ttl_none_when_no_ttl() {
+        let entry = CacheEntry {
+            data: vec![1, 2, 3],
+            ttl: None,
+            tags: vec![],
+            created_at: Utc::now(),
+        };
+
+        assert!(entry.remaining_ttl().is_none());
+    }
+
+    #[test]
+    fn test_cache_stats_calculate_hit_rate_zero_total() {
+        let mut stats = CacheStats::default();
+        stats.calculate_hit_rate();
+        assert_eq!(stats.hit_rate, 0.0);
+    }
+
+    #[test]
+    fn test_cache_stats_calculate_hit_rate_all_hits() {
+        let mut stats = CacheStats {
+            hits: 100,
+            misses: 0,
+            ..Default::default()
+        };
+        stats.calculate_hit_rate();
+        assert!((stats.hit_rate - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_cache_stats_calculate_hit_rate_all_misses() {
+        let mut stats = CacheStats {
+            hits: 0,
+            misses: 100,
+            ..Default::default()
+        };
+        stats.calculate_hit_rate();
+        assert!((stats.hit_rate - 0.0).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_cleanup_expired() {
+        let backend = InMemoryBackend::new(InMemoryConfig {
+            time_to_idle: None,
+            ..Default::default()
+        });
+
+        let fresh = CacheEntry {
+            data: b"fresh".to_vec(),
+            ttl: Some(Duration::from_secs(3600)),
+            tags: vec![],
+            created_at: Utc::now(),
+        };
+
+        let expired = CacheEntry {
+            data: b"expired".to_vec(),
+            ttl: Some(Duration::from_millis(1)),
+            tags: vec![],
+            created_at: Utc::now() - chrono::Duration::seconds(10),
+        };
+
+        backend.set("fresh-key", fresh).await.unwrap();
+        backend.set("expired-key", expired).await.unwrap();
+
+        let cleaned = backend.cleanup_expired().await;
+        assert_eq!(cleaned, 1);
+        assert!(backend.exists("fresh-key").await.unwrap());
+    }
 }
