@@ -1,42 +1,94 @@
-# Build stage
-FROM rust:1.75-bookworm AS builder
+# syntax=docker/dockerfile:1
 
+# ==============================================================================
+# Stage 1: Chef - Install cargo-chef for dependency caching
+# ==============================================================================
+FROM rust:1.75-bookworm AS chef
+RUN cargo install cargo-chef
 WORKDIR /app
 
-# Install dependencies
+# ==============================================================================
+# Stage 2: Planner - Compute dependency recipe
+# ==============================================================================
+FROM chef AS planner
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY build.rs ./
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ==============================================================================
+# Stage 3: Builder - Build dependencies then application
+# ==============================================================================
+FROM chef AS builder
+
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy manifests
+# Build dependencies first (cached layer)
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# Build application
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY migrations ./migrations
 COPY build.rs ./
 
-# Build release binary
-RUN cargo build --release
+ENV SQLX_OFFLINE=true
+ENV CARGO_INCREMENTAL=0
 
-# Runtime stage
-FROM debian:bookworm-slim
+RUN cargo build --release && strip /app/target/release/apex-server
+
+# ==============================================================================
+# Stage 4: Development - Full build environment for testing
+# ==============================================================================
+FROM rust:1.75-bookworm AS development
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    protobuf-compiler \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . .
+RUN cargo build
+
+EXPOSE 8080 50051 9090
+CMD ["cargo", "run"]
+
+# ==============================================================================
+# Stage 5: Runtime - Minimal production image
+# ==============================================================================
+FROM debian:bookworm-slim AS runtime
+
+LABEL org.opencontainers.image.source="https://github.com/apex/apex"
+LABEL org.opencontainers.image.description="Apex API Server"
+LABEL org.opencontainers.image.licenses="MIT"
 
 WORKDIR /app
 
 # Install runtime dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libssl3 \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Copy binary from builder
 COPY --from=builder /app/target/release/apex-server /app/apex-server
 COPY --from=builder /app/migrations /app/migrations
 
 # Create non-root user
-RUN useradd -r -u 1000 apex
+RUN groupadd -r apex && useradd -r -g apex -u 1000 apex
 USER apex
 
 # Health check
@@ -46,5 +98,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # Expose ports
 EXPOSE 8080 50051 9090
 
-# Run the server
+# Use tini as init system
+ENTRYPOINT ["tini", "--"]
 CMD ["/app/apex-server"]

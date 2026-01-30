@@ -25,6 +25,38 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+      {{- if .Values.api.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ .Values.api.terminationGracePeriodSeconds }}
+      {{- end }}
+      initContainers:
+        # Wait for database to be ready
+        - name: wait-for-db
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z {{ include "apex.fullname" . }}-postgresql 5432; do echo "Waiting for database..."; sleep 2; done']
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "10m"
+            limits:
+              memory: "32Mi"
+              cpu: "50m"
+        # Run database migrations
+        - name: db-migrate
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          command: ["/app/apex-server", "migrate"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "apex.fullname" . }}-secrets
+                  key: database-url
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
       containers:
         - name: api
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
