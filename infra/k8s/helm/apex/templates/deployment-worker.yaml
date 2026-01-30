@@ -27,6 +27,32 @@ spec:
       serviceAccountName: {{ include "apex.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.worker.podSecurityContext | nindent 8 }}
+      {{- if .Values.worker.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds }}
+      {{- end }}
+      initContainers:
+        # Wait for database to be ready
+        - name: wait-for-db
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z {{ include "apex.fullname" . }}-postgresql 5432; do echo "Waiting for database..."; sleep 2; done']
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "10m"
+            limits:
+              memory: "32Mi"
+              cpu: "50m"
+        # Wait for API server to be ready
+        - name: wait-for-api
+          image: busybox:1.36
+          command: ['sh', '-c', 'until wget -q --spider http://{{ include "apex.fullname" . }}-api:8080/health; do echo "Waiting for API..."; sleep 3; done']
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "10m"
+            limits:
+              memory: "32Mi"
+              cpu: "50m"
       containers:
         - name: worker
           securityContext:
