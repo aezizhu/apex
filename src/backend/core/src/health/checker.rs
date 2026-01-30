@@ -664,6 +664,404 @@ impl ComponentHealth {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Disk Space Health Checker
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Health checker for disk space.
+pub struct DiskSpaceHealthChecker {
+    /// Path to check disk space for.
+    path: String,
+    /// Warning threshold percentage (disk usage above this = degraded).
+    warning_threshold_pct: f64,
+    /// Critical threshold percentage (disk usage above this = unhealthy).
+    critical_threshold_pct: f64,
+}
+
+impl DiskSpaceHealthChecker {
+    /// Create a new disk space health checker.
+    pub fn new(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            warning_threshold_pct: 80.0,
+            critical_threshold_pct: 95.0,
+        }
+    }
+
+    /// Set warning threshold percentage.
+    pub fn with_warning_threshold(mut self, pct: f64) -> Self {
+        self.warning_threshold_pct = pct;
+        self
+    }
+
+    /// Set critical threshold percentage.
+    pub fn with_critical_threshold(mut self, pct: f64) -> Self {
+        self.critical_threshold_pct = pct;
+        self
+    }
+
+    /// Get disk usage information.
+    fn get_disk_usage(&self) -> std::result::Result<DiskUsageInfo, String> {
+        #[cfg(unix)]
+        {
+            use std::ffi::CString;
+            let c_path = CString::new(self.path.as_str())
+                .map_err(|e| format\!("Invalid path: {}", e))?;
+
+            unsafe {
+                let mut stat: libc::statvfs = std::mem::zeroed();
+                if libc::statvfs(c_path.as_ptr(), &mut stat) \!= 0 {
+                    return Err(format\!(
+                        "statvfs failed for {}: {}",
+                        self.path,
+                        std::io::Error::last_os_error()
+                    ));
+                }
+
+                let total = stat.f_blocks as u64 * stat.f_frsize as u64;
+                let available = stat.f_bavail as u64 * stat.f_frsize as u64;
+                let used = total.saturating_sub(stat.f_bfree as u64 * stat.f_frsize as u64);
+                let usage_pct = if total > 0 {
+                    (used as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                };
+
+                Ok(DiskUsageInfo {
+                    total_bytes: total,
+                    used_bytes: used,
+                    available_bytes: available,
+                    usage_pct,
+                })
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            Err("Disk space check not supported on this platform".to_string())
+        }
+    }
+}
+
+/// Disk usage information.
+#[derive(Debug, Clone)]
+struct DiskUsageInfo {
+    total_bytes: u64,
+    used_bytes: u64,
+    available_bytes: u64,
+    usage_pct: f64,
+}
+
+#[async_trait]
+impl HealthChecker for DiskSpaceHealthChecker {
+    fn name(&self) -> &str {
+        "disk_space"
+    }
+
+    async fn check(&self) -> ComponentHealth {
+        let start = Instant::now();
+
+        match self.get_disk_usage() {
+            Ok(info) => {
+                let status = if info.usage_pct >= self.critical_threshold_pct {
+                    HealthStatus::Unhealthy
+                } else if info.usage_pct >= self.warning_threshold_pct {
+                    HealthStatus::Degraded
+                } else {
+                    HealthStatus::Healthy
+                };
+
+                let message = format\!(
+                    "Disk usage: {:.1}% ({} / {} available)",
+                    info.usage_pct,
+                    format_bytes(info.used_bytes),
+                    format_bytes(info.total_bytes)
+                );
+
+                ComponentHealth::new_with_status(self.name(), status)
+                    .with_message(message)
+                    .with_latency(start.elapsed())
+                    .with_metadata("path", &self.path)
+                    .with_metadata("total_bytes", info.total_bytes)
+                    .with_metadata("used_bytes", info.used_bytes)
+                    .with_metadata("available_bytes", info.available_bytes)
+                    .with_metadata("usage_pct", info.usage_pct)
+            }
+            Err(e) => {
+                warn\!(error = %e, path = %self.path, "Disk space check failed");
+                ComponentHealth::unhealthy(self.name())
+                    .with_error(e)
+                    .with_latency(start.elapsed())
+            }
+        }
+    }
+}
+
+/// Format bytes as a human-readable string.
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+    const TB: u64 = GB * 1024;
+
+    if bytes >= TB {
+        format\!("{:.1} TB", bytes as f64 / TB as f64)
+    } else if bytes >= GB {
+        format\!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format\!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format\!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format\!("{} B", bytes)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Memory Health Checker
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Health checker for system memory.
+pub struct MemoryHealthChecker {
+    /// Warning threshold percentage (memory usage above this = degraded).
+    warning_threshold_pct: f64,
+    /// Critical threshold percentage (memory usage above this = unhealthy).
+    critical_threshold_pct: f64,
+}
+
+impl MemoryHealthChecker {
+    /// Create a new memory health checker.
+    pub fn new() -> Self {
+        Self {
+            warning_threshold_pct: 85.0,
+            critical_threshold_pct: 95.0,
+        }
+    }
+
+    /// Set warning threshold.
+    pub fn with_warning_threshold(mut self, pct: f64) -> Self {
+        self.warning_threshold_pct = pct;
+        self
+    }
+
+    /// Set critical threshold.
+    pub fn with_critical_threshold(mut self, pct: f64) -> Self {
+        self.critical_threshold_pct = pct;
+        self
+    }
+
+    /// Get process memory usage.
+    fn get_process_memory(&self) -> std::result::Result<ProcessMemoryInfo, String> {
+        #[cfg(unix)]
+        {
+            unsafe {
+                let mut usage: libc::rusage = std::mem::zeroed();
+                if libc::getrusage(libc::RUSAGE_SELF, &mut usage) \!= 0 {
+                    return Err(format\!(
+                        "getrusage failed: {}",
+                        std::io::Error::last_os_error()
+                    ));
+                }
+                // ru_maxrss is in bytes on macOS, kilobytes on Linux
+                #[cfg(target_os = "macos")]
+                let rss_bytes = usage.ru_maxrss as u64;
+                #[cfg(not(target_os = "macos"))]
+                let rss_bytes = usage.ru_maxrss as u64 * 1024;
+
+                Ok(ProcessMemoryInfo { rss_bytes })
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            Err("Memory check not supported on this platform".to_string())
+        }
+    }
+
+    /// Get total system memory.
+    fn get_total_memory(&self) -> std::result::Result<u64, String> {
+        #[cfg(target_os = "macos")]
+        {
+            unsafe {
+                let mut size: u64 = 0;
+                let mut len = std::mem::size_of::<u64>();
+                let mib = [libc::CTL_HW, libc::HW_MEMSIZE];
+                if libc::sysctl(
+                    mib.as_ptr() as *mut _,
+                    2,
+                    &mut size as *mut u64 as *mut _,
+                    &mut len,
+                    std::ptr::null_mut(),
+                    0,
+                ) \!= 0
+                {
+                    return Err("sysctl HW_MEMSIZE failed".to_string());
+                }
+                Ok(size)
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            use std::fs;
+            let meminfo = fs::read_to_string("/proc/meminfo")
+                .map_err(|e| format\!("Failed to read /proc/meminfo: {}", e))?;
+            for line in meminfo.lines() {
+                if line.starts_with("MemTotal:") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        let kb: u64 = parts[1]
+                            .parse()
+                            .map_err(|e| format\!("Failed to parse MemTotal: {}", e))?;
+                        return Ok(kb * 1024);
+                    }
+                }
+            }
+            Err("MemTotal not found in /proc/meminfo".to_string())
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            Err("Total memory check not supported on this platform".to_string())
+        }
+    }
+}
+
+/// Process memory information.
+#[derive(Debug, Clone)]
+struct ProcessMemoryInfo {
+    rss_bytes: u64,
+}
+
+impl Default for MemoryHealthChecker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl HealthChecker for MemoryHealthChecker {
+    fn name(&self) -> &str {
+        "memory"
+    }
+
+    async fn check(&self) -> ComponentHealth {
+        let start = Instant::now();
+
+        let process_mem = match self.get_process_memory() {
+            Ok(info) => info,
+            Err(e) => {
+                return ComponentHealth::unhealthy(self.name())
+                    .with_error(e)
+                    .with_latency(start.elapsed());
+            }
+        };
+
+        let mut health = ComponentHealth::healthy(self.name())
+            .with_latency(start.elapsed())
+            .with_metadata("process_rss_bytes", process_mem.rss_bytes)
+            .with_metadata("process_rss_mb", process_mem.rss_bytes / (1024 * 1024));
+
+        // Try to get total memory and compute usage percentage
+        if let Ok(total_memory) = self.get_total_memory() {
+            let usage_pct = (process_mem.rss_bytes as f64 / total_memory as f64) * 100.0;
+            health = health
+                .with_metadata("total_memory_bytes", total_memory)
+                .with_metadata("memory_usage_pct", usage_pct);
+
+            if usage_pct >= self.critical_threshold_pct {
+                health = health
+                    .with_status(HealthStatus::Unhealthy)
+                    .with_message(format\!(
+                        "Process memory usage critical: {:.1}% ({} / {})",
+                        usage_pct,
+                        format_bytes(process_mem.rss_bytes),
+                        format_bytes(total_memory)
+                    ));
+            } else if usage_pct >= self.warning_threshold_pct {
+                health = health
+                    .with_status(HealthStatus::Degraded)
+                    .with_message(format\!(
+                        "Process memory usage high: {:.1}% ({} / {})",
+                        usage_pct,
+                        format_bytes(process_mem.rss_bytes),
+                        format_bytes(total_memory)
+                    ));
+            } else {
+                health = health.with_message(format\!(
+                    "Process memory: {} ({:.1}% of {})",
+                    format_bytes(process_mem.rss_bytes),
+                    usage_pct,
+                    format_bytes(total_memory)
+                ));
+            }
+        } else {
+            health = health.with_message(format\!(
+                "Process RSS: {}",
+                format_bytes(process_mem.rss_bytes)
+            ));
+        }
+
+        health
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Backup Health Checker
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Health checker for database backup infrastructure.
+pub struct BackupHealthChecker {
+    pool: PgPool,
+}
+
+impl BackupHealthChecker {
+    /// Create a new backup health checker.
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl HealthChecker for BackupHealthChecker {
+    fn name(&self) -> &str {
+        "database_backup"
+    }
+
+    async fn check(&self) -> ComponentHealth {
+        let start = Instant::now();
+        let monitor = crate::db::health::DatabaseHealthMonitor::new(
+            self.pool.clone(),
+            0,
+            0,
+        );
+        let backup_result = monitor.validate_backups().await;
+
+        let status = match &backup_result.status {
+            crate::db::health::BackupStatus::Healthy => HealthStatus::Healthy,
+            crate::db::health::BackupStatus::Warning => HealthStatus::Degraded,
+            crate::db::health::BackupStatus::NotConfigured => HealthStatus::Degraded,
+            crate::db::health::BackupStatus::Unknown => HealthStatus::Unhealthy,
+        };
+
+        let message = match &backup_result.status {
+            crate::db::health::BackupStatus::Healthy => "Backup infrastructure is healthy",
+            crate::db::health::BackupStatus::Warning => "Backup has warnings (recent failures detected)",
+            crate::db::health::BackupStatus::NotConfigured => "No backup infrastructure detected",
+            crate::db::health::BackupStatus::Unknown => "Backup status unknown",
+        };
+
+        ComponentHealth::new_with_status(self.name(), status)
+            .with_message(message)
+            .with_latency(start.elapsed())
+            .with_metadata("wal_archiving_enabled", backup_result.wal_archiving_enabled)
+            .with_metadata("has_replication_slots", backup_result.has_replication_slots)
+            .with_metadata("archived_count", backup_result.archived_count)
+            .with_metadata("failed_count", backup_result.failed_count)
+            .with_metadata("database_size_bytes", backup_result.database_size_bytes)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Composite Health Checker
 // ═══════════════════════════════════════════════════════════════════════════════
 

@@ -15,6 +15,7 @@
 //! - **Validation**: Comprehensive request validation with sync and async support
 //! - **Cache**: Multi-tier caching with tag-based invalidation and HTTP caching middleware
 //! - **Pagination**: Cursor and offset-based pagination utilities
+//! - **RBAC**: Role-based access control with multi-tenancy and policy engine
 //! - **Plugins**: Plugin marketplace with manifest-driven discovery, sandboxed execution, and lifecycle management
 
 pub mod orchestrator;
@@ -30,6 +31,7 @@ pub mod config;
 pub mod error;
 pub mod websocket;
 pub mod middleware;
+pub mod rbac;
 pub mod validation;
 pub mod cache;
 pub mod pagination;
@@ -55,6 +57,13 @@ pub mod prelude {
         TaskUpdate, AgentUpdate, DagUpdate, MetricsSnapshot,
         ApprovalRequest, ApprovalResponse,
         RoomId, RoomType,
+    };
+    pub use crate::rbac::{
+        PolicyEngine, PolicyDecision, PolicyError,
+        Permission, Role, RoleId, RoleBinding, UserId, OrganizationId,
+        Organization, OrganizationMember, OrganizationStatus, MemberRole,
+        ResourceScope, PredefinedRole,
+        RequirePermissionLayer, RequirePermissionService, RbacContext,
     };
     pub use crate::middleware::{
         RateLimitLayer, RateLimitConfig, RateLimitError,
