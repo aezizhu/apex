@@ -104,6 +104,22 @@ tonic-build = "0.11"
 [[bench]]
 name = "orchestrator_bench"
 harness = false
+
+[[bench]]
+name = "dag_bench"
+harness = false
+
+[[bench]]
+name = "routing_bench"
+harness = false
+
+[[bench]]
+name = "cache_bench"
+harness = false
+
+[[bench]]
+name = "validation_bench"
+harness = false
 [[bench]]
 name = "dag_bench"
 harness = false
