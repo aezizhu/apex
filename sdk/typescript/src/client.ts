@@ -1,5 +1,25 @@
 /**
  * Project Apex TypeScript SDK - API Client
+ *
+ * Provides the {@link ApexClient} class for interacting with the Apex Agent
+ * Swarm Orchestration API.  All resource operations (tasks, agents, DAGs,
+ * approvals) are exposed as typed async methods with automatic retry and
+ * exponential back-off for transient errors.
+ *
+ * @example
+ * ```typescript
+ * import { ApexClient } from '@apex-swarm/sdk';
+ *
+ * const client = new ApexClient({
+ *   baseUrl: 'http://localhost:8080',
+ *   apiKey: process.env.APEX_API_KEY!,
+ * });
+ *
+ * const health = await client.healthCheck();
+ * console.log(health.status);
+ * ```
+ *
+ * @module client
  */
 
 import axios, {
@@ -79,11 +99,38 @@ function buildQueryString(params: Record<string, unknown>): string {
 // ApexClient Class
 // ============================================================================
 
+/**
+ * Full-featured client for the Apex Agent Swarm Orchestration API.
+ *
+ * Encapsulates HTTP communication (via axios), automatic retry with
+ * exponential back-off, and optional WebSocket access for real-time events.
+ *
+ * @example
+ * ```typescript
+ * const client = new ApexClient({
+ *   baseUrl: 'http://localhost:8080',
+ *   apiKey: 'my-api-key',
+ *   timeout: 15000,
+ *   retries: 5,
+ * });
+ *
+ * // Create and wait for a task
+ * const task = await client.runTask({ name: 'Summarise document', input: { url } });
+ * console.log(task.output);
+ * ```
+ */
 export class ApexClient {
   private readonly config: Required<ApexClientConfig>;
   private readonly httpClient: AxiosInstance;
   private websocket: ApexWebSocket | null = null;
 
+  /**
+   * Create a new ApexClient.
+   *
+   * @param config - Client configuration including base URL, API key,
+   *   timeout, and retry settings.  Only `baseUrl` is required; all other
+   *   fields have sensible defaults.
+   */
   constructor(config: ApexClientConfig) {
     this.config = {
       baseUrl: config.baseUrl.replace(/\/$/, ''),
@@ -241,7 +288,11 @@ export class ApexClient {
   // ============================================================================
 
   /**
-   * Check API health status
+   * Check API health status.
+   *
+   * @param config - Optional per-request overrides (timeout, headers, signal).
+   * @returns Health status of the API and its dependencies.
+   * @throws {@link ApexError} if the server is unreachable.
    */
   async healthCheck(config?: RequestConfig): Promise<HealthCheckResponse> {
     return this.get<HealthCheckResponse>('/health', config);
@@ -252,7 +303,11 @@ export class ApexClient {
   // ============================================================================
 
   /**
-   * List tasks with optional filters
+   * List tasks with optional filters and pagination.
+   *
+   * @param filter - Optional filter criteria (status, priority, tags, pagination).
+   * @param config - Optional per-request overrides.
+   * @returns Paginated list of matching {@link Task} objects.
    */
   async listTasks(
     filter?: TaskFilter,
@@ -263,21 +318,47 @@ export class ApexClient {
   }
 
   /**
-   * Get a task by ID
+   * Retrieve a single task by its unique identifier.
+   *
+   * @param taskId - UUID of the task.
+   * @param config - Optional per-request overrides.
+   * @returns The requested {@link Task}.
+   * @throws {@link ApexError} with status 404 if the task does not exist.
    */
   async getTask(taskId: string, config?: RequestConfig): Promise<Task> {
     return this.get<Task>(`/api/v1/tasks/${taskId}`, config);
   }
 
   /**
-   * Create a new task
+   * Submit a new task for execution.
+   *
+   * @param task - Task specification (name, description, input, priority, tags).
+   * @param config - Optional per-request overrides.
+   * @returns The newly created {@link Task} with a server-assigned ID.
+   * @throws {@link ApexError} with status 422 if validation fails.
+   *
+   * @example
+   * ```typescript
+   * const task = await client.createTask({
+   *   name: 'Analyse dataset',
+   *   description: 'Run statistical analysis on Q4 data',
+   *   input: { datasetUrl: 's3://bucket/data.parquet' },
+   *   priority: 'high',
+   * });
+   * ```
    */
   async createTask(task: CreateTaskRequest, config?: RequestConfig): Promise<Task> {
     return this.post<Task>('/api/v1/tasks', task, config);
   }
 
   /**
-   * Update a task
+   * Update mutable fields of an existing task.
+   *
+   * @param taskId - UUID of the task to update.
+   * @param updates - Fields to change.
+   * @param config - Optional per-request overrides.
+   * @returns The updated {@link Task}.
+   * @throws {@link ApexError} with status 404 if the task does not exist.
    */
   async updateTask(
     taskId: string,
@@ -288,21 +369,33 @@ export class ApexClient {
   }
 
   /**
-   * Delete a task
+   * Permanently delete a task.
+   *
+   * @param taskId - UUID of the task to delete.
+   * @param config - Optional per-request overrides.
+   * @throws {@link ApexError} with status 404 if the task does not exist.
    */
   async deleteTask(taskId: string, config?: RequestConfig): Promise<void> {
     return this.delete<void>(`/api/v1/tasks/${taskId}`, config);
   }
 
   /**
-   * Cancel a running task
+   * Cancel a running or pending task.
+   *
+   * @param taskId - UUID of the task to cancel.
+   * @param config - Optional per-request overrides.
+   * @returns The {@link Task} in `cancelled` status.
    */
   async cancelTask(taskId: string, config?: RequestConfig): Promise<Task> {
     return this.post<Task>(`/api/v1/tasks/${taskId}/cancel`, undefined, config);
   }
 
   /**
-   * Retry a failed task
+   * Retry a failed task, resetting it to `pending` status.
+   *
+   * @param taskId - UUID of the task to retry.
+   * @param config - Optional per-request overrides.
+   * @returns The {@link Task} reset to `pending` status.
    */
   async retryTask(taskId: string, config?: RequestConfig): Promise<Task> {
     return this.post<Task>(`/api/v1/tasks/${taskId}/retry`, undefined, config);
@@ -354,7 +447,11 @@ export class ApexClient {
   // ============================================================================
 
   /**
-   * List agents with optional filters
+   * List registered agents with optional filters and pagination.
+   *
+   * @param filter - Optional filter criteria (status, tags, pagination).
+   * @param config - Optional per-request overrides.
+   * @returns Paginated list of matching {@link Agent} objects.
    */
   async listAgents(
     filter?: AgentFilter,
@@ -365,14 +462,24 @@ export class ApexClient {
   }
 
   /**
-   * Get an agent by ID
+   * Retrieve a single agent by its unique identifier.
+   *
+   * @param agentId - UUID of the agent.
+   * @param config - Optional per-request overrides.
+   * @returns The requested {@link Agent}.
+   * @throws {@link ApexError} with status 404 if the agent does not exist.
    */
   async getAgent(agentId: string, config?: RequestConfig): Promise<Agent> {
     return this.get<Agent>(`/api/v1/agents/${agentId}`, config);
   }
 
   /**
-   * Create a new agent
+   * Register a new agent with the orchestrator.
+   *
+   * @param agent - Agent specification (name, capabilities, model config).
+   * @param config - Optional per-request overrides.
+   * @returns The newly registered {@link Agent}.
+   * @throws {@link ApexError} with status 422 if validation fails.
    */
   async createAgent(agent: CreateAgentRequest, config?: RequestConfig): Promise<Agent> {
     return this.post<Agent>('/api/v1/agents', agent, config);
@@ -438,7 +545,11 @@ export class ApexClient {
   // ============================================================================
 
   /**
-   * List DAGs with optional filters
+   * List DAG definitions with optional filters and pagination.
+   *
+   * @param filter - Optional filter criteria (status, tags, pagination).
+   * @param config - Optional per-request overrides.
+   * @returns Paginated list of matching {@link DAG} objects.
    */
   async listDAGs(
     filter?: DAGFilter,
@@ -449,14 +560,39 @@ export class ApexClient {
   }
 
   /**
-   * Get a DAG by ID
+   * Retrieve a DAG by ID, including its nodes and edges.
+   *
+   * @param dagId - UUID of the DAG.
+   * @param config - Optional per-request overrides.
+   * @returns The requested {@link DAG}.
+   * @throws {@link ApexError} with status 404 if the DAG does not exist.
    */
   async getDAG(dagId: string, config?: RequestConfig): Promise<DAG> {
     return this.get<DAG>(`/api/v1/dags/${dagId}`, config);
   }
 
   /**
-   * Create a new DAG
+   * Create a new DAG workflow definition.
+   *
+   * The DAG is stored but not executed until {@link startDAG} is called.
+   *
+   * @param dag - Full DAG specification (nodes, edges, metadata).
+   * @param config - Optional per-request overrides.
+   * @returns The persisted {@link DAG} with a server-assigned ID.
+   * @throws {@link ApexError} with status 422 if the definition is invalid
+   *   (e.g. contains cycles or references missing nodes).
+   *
+   * @example
+   * ```typescript
+   * const dag = await client.createDAG({
+   *   name: 'ETL Pipeline',
+   *   nodes: [
+   *     { id: 'extract', taskTemplate: { name: 'Extract' } },
+   *     { id: 'transform', taskTemplate: { name: 'Transform' }, dependsOn: ['extract'] },
+   *     { id: 'load', taskTemplate: { name: 'Load' }, dependsOn: ['transform'] },
+   *   ],
+   * });
+   * ```
    */
   async createDAG(dag: CreateDAGRequest, config?: RequestConfig): Promise<DAG> {
     return this.post<DAG>('/api/v1/dags', dag, config);
@@ -481,7 +617,12 @@ export class ApexClient {
   }
 
   /**
-   * Start a DAG execution
+   * Start executing a DAG, scheduling its root nodes immediately.
+   *
+   * @param dagId - UUID of the DAG to execute.
+   * @param input - Optional key-value input passed to root nodes.
+   * @param config - Optional per-request overrides.
+   * @returns A {@link DAGExecution} representing the running instance.
    */
   async startDAG(
     dagId: string,
@@ -617,7 +758,14 @@ export class ApexClient {
   // ============================================================================
 
   /**
-   * Get WebSocket client for real-time updates
+   * Get or create a WebSocket client for real-time event streaming.
+   *
+   * The WebSocket instance is lazily created and reused across calls.
+   * Call {@link connectWebSocket} to open the connection, or use the
+   * returned object's `connect()` method directly.
+   *
+   * @param config - Optional WebSocket configuration overrides.
+   * @returns A configured {@link ApexWebSocket} instance.
    */
   getWebSocket(config?: Partial<ApexWebSocketConfig>): ApexWebSocket {
     if (!this.websocket) {
@@ -654,7 +802,24 @@ export class ApexClient {
   // ============================================================================
 
   /**
-   * Wait for a task to complete
+   * Wait for a task to reach a terminal state (`completed`, `failed`, or `cancelled`).
+   *
+   * Supports two strategies: polling (default) or WebSocket push.
+   *
+   * @param taskId - UUID of the task to monitor.
+   * @param options - Polling interval, timeout, and whether to use WebSocket.
+   * @returns The {@link Task} in `completed` status.
+   * @throws Error if the task fails or is cancelled.
+   * @throws {@link TimeoutError} if the timeout elapses.
+   *
+   * @example
+   * ```typescript
+   * const task = await client.createTask({ name: 'Long job' });
+   * const completed = await client.waitForTask(task.id, {
+   *   pollInterval: 3000,
+   *   timeout: 120000,
+   * });
+   * ```
    */
   async waitForTask(
     taskId: string,
@@ -748,7 +913,15 @@ export class ApexClient {
   }
 
   /**
-   * Create and run a task, waiting for completion
+   * Create a task and block until it completes.
+   *
+   * Convenience wrapper combining {@link createTask} and {@link waitForTask}.
+   *
+   * @param task - Task specification.
+   * @param options - Polling interval, timeout, and WebSocket flag.
+   * @returns The completed {@link Task} with output data.
+   * @throws Error if the task fails or is cancelled.
+   * @throws {@link TimeoutError} if the timeout elapses.
    */
   async runTask(
     task: CreateTaskRequest,
@@ -763,7 +936,16 @@ export class ApexClient {
   }
 
   /**
-   * Start a DAG and wait for completion
+   * Start a DAG and block until execution completes.
+   *
+   * Convenience wrapper combining {@link startDAG} and {@link waitForDAG}.
+   *
+   * @param dagId - UUID of the DAG to execute.
+   * @param input - Optional initial input for root nodes.
+   * @param options - Polling interval and timeout.
+   * @returns The completed {@link DAGExecution}.
+   * @throws Error if the execution fails.
+   * @throws {@link TimeoutError} if the timeout elapses.
    */
   async runDAG(
     dagId: string,
