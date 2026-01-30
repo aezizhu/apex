@@ -36,7 +36,7 @@ pub mod health;
 pub mod jobs;
 pub mod events;
 
-pub use error::{ApexError, Result, ErrorCode, ErrorContext, ErrorDetails, ErrorSeverity};
+pub use error::{ApexError, Result, ErrorCode, ErrorContext, ErrorDetails, ErrorSeverity, DAGError, OrchestratorError, AgentError, ContractError};
 
 /// Re-export commonly used types
 pub mod prelude {
@@ -45,7 +45,7 @@ pub mod prelude {
     pub use crate::contracts::{AgentContract, ResourceLimits};
     pub use crate::agents::{Agent, AgentId, AgentStatus};
     pub use crate::routing::ModelRouter;
-    pub use crate::error::{ApexError, Result, ErrorCode, ErrorContext, ErrorDetails, ErrorSeverity};
+    pub use crate::error::{ApexError, Result, ErrorCode, ErrorContext, ErrorDetails, ErrorSeverity, DAGError, OrchestratorError, AgentError, ContractError};
     pub use crate::websocket::{
         WebSocketState, WebSocketConfig, WebSocketStats,
         ConnectionId, ConnectionState,
