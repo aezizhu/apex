@@ -80,9 +80,19 @@ pub async fn ws_handler(
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
+/// A subscription entry keyed by resource name and optional ID.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SubscriptionKey {
+    resource: String,
+    id: Option<String>,
+}
+
 /// Handle individual WebSocket connection.
 async fn handle_socket(socket: WebSocket, _state: AppState) {
     let (mut sender, mut receiver) = socket.split();
+
+    // Track active subscriptions for this connection
+    let mut subscriptions = std::collections::HashSet::<SubscriptionKey>::new();
 
     // Send initial connection acknowledgment
     let ack = serde_json::json!({
@@ -108,12 +118,18 @@ async fn handle_socket(socket: WebSocket, _state: AppState) {
                                 }
                             }
                             WsMessage::Subscribe { resource, id } => {
-                                tracing::info!(resource = %resource, id = ?id, "Client subscribed");
-                                // TODO: Add to subscription list
+                                tracing::info!(resource = %resource, id = ?id, count = subscriptions.len(), "Client subscribed");
+                                let key = SubscriptionKey { resource: resource.clone(), id: id.clone() };
+                                subscriptions.insert(key);
+                                let ack_msg = serde_json::json!({"type": "subscribed", "resource": resource, "id": id});
+                                if sender.send(Message::Text(ack_msg.to_string())).await.is_err() { break; }
                             }
                             WsMessage::Unsubscribe { resource, id } => {
-                                tracing::info!(resource = %resource, id = ?id, "Client unsubscribed");
-                                // TODO: Remove from subscription list
+                                tracing::info!(resource = %resource, id = ?id, count = subscriptions.len(), "Client unsubscribed");
+                                let key = SubscriptionKey { resource: resource.clone(), id: id.clone() };
+                                subscriptions.remove(&key);
+                                let ack_msg = serde_json::json!({"type": "unsubscribed", "resource": resource, "id": id});
+                                if sender.send(Message::Text(ack_msg.to_string())).await.is_err() { break; }
                             }
                             _ => {}
                         }
@@ -142,7 +158,7 @@ async fn handle_socket(socket: WebSocket, _state: AppState) {
         }
     }
 
-    tracing::info!("WebSocket connection closed");
+    tracing::info!(subscriptions = subscriptions.len(), "WebSocket connection closed");
 }
 
 /// Broadcast an update to all connected clients.
