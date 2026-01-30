@@ -698,10 +698,23 @@ async fn handle_client_message(
                 return;
             }
 
-            // Send confirmation with current state
+            // Fetch current state from session store for the subscribed room
+            let current_state = if let Some(ref sm) = state.session_manager {
+                match sm.get_missed_messages(&room_id.as_str(), 0).await {
+                    Ok(messages) if !messages.is_empty() => serde_json::to_value(&messages).ok(),
+                    Ok(_) => None,
+                    Err(e) => {
+                        warn!(connection_id = %conn_id, room = %room_id.as_str(), error = %e, "Failed to fetch current state for subscription");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
             let response = ServerMessage::Subscribed {
                 target,
-                current_state: None, // TODO: Fetch current state
+                current_state,
             };
             let _ = tx.send(response).await;
 
@@ -742,7 +755,7 @@ async fn handle_client_message(
             let result_msg = ServerMessage::ApprovalResult {
                 request_id: response.request_id.clone(),
                 approved: response.approved,
-                approver: None, // TODO: Get from connection claims
+                approver: state.handler.get_connection(conn_id).await.and_then(|c| c.user_id.clone()),
                 comment: response.comment,
             };
 
