@@ -72,6 +72,8 @@ base64 = "0.22"   # For cursor encoding
 # Config
 config = "0.14"
 dotenvy = "0.15"
+toml = "0.8"
+humantime-serde = "1.1"
 
 # Crypto
 jsonwebtoken = "9.2"
@@ -93,6 +95,7 @@ tokio-test = "0.4"
 criterion = { version = "0.5", features = ["async_tokio"] }
 fake = { version = "2.9", features = ["derive"] }
 wiremock = "0.5"
+tempfile = "3.10"
 
 [build-dependencies]
 tonic-build = "0.11"
