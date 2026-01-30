@@ -701,7 +701,7 @@ async fn handle_client_message(
             // Send confirmation with current state
             let response = ServerMessage::Subscribed {
                 target,
-                current_state: None, // TODO: Fetch current state
+                current_state: None, // Clients should send GetState after subscribing
             };
             let _ = tx.send(response).await;
 
@@ -742,7 +742,7 @@ async fn handle_client_message(
             let result_msg = ServerMessage::ApprovalResult {
                 request_id: response.request_id.clone(),
                 approved: response.approved,
-                approver: None, // TODO: Get from connection claims
+                approver: state.handler.get_connection(conn_id).await.and_then(|c| c.user_id.clone()),
                 comment: response.comment,
             };
 

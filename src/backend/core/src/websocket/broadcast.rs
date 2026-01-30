@@ -108,6 +108,7 @@ pub struct Broadcaster {
     total_broadcasts: AtomicU64,
     total_delivered: AtomicU64,
     total_failed: AtomicU64,
+    messages_in_queue: AtomicU64,
     broadcasts_by_priority: RwLock<HashMap<BroadcastPriority, u64>>,
 }
 
@@ -124,6 +125,7 @@ impl Broadcaster {
             total_broadcasts: AtomicU64::new(0),
             total_delivered: AtomicU64::new(0),
             total_failed: AtomicU64::new(0),
+            messages_in_queue: AtomicU64::new(0),
             broadcasts_by_priority: RwLock::new(HashMap::new()),
         }
     }
@@ -214,6 +216,8 @@ impl Broadcaster {
         let room_id = msg.room_id.clone();
         let priority = msg.priority;
 
+        self.messages_in_queue.fetch_add(1, Ordering::Relaxed);
+
         // Get or create channel for this room
         let sender = self.get_or_create_channel(&room_id).await;
 
@@ -232,9 +236,12 @@ impl Broadcaster {
             }
             Err(_e) => {
                 // No subscribers - this is normal if room is empty
+                self.total_failed.fetch_add(1, Ordering::Relaxed);
                 debug!(room = %room_id.as_str(), "No subscribers for broadcast");
             }
         }
+
+        self.messages_in_queue.fetch_sub(1, Ordering::Relaxed);
 
         // Also send to global channel for monitoring
         let _ = self.global_channel.send(msg);
@@ -278,7 +285,7 @@ impl Broadcaster {
             total_delivered: self.total_delivered.load(Ordering::Relaxed),
             total_failed: self.total_failed.load(Ordering::Relaxed),
             broadcasts_per_priority,
-            messages_in_queue: 0, // TODO: Track queue depth
+            messages_in_queue: self.messages_in_queue.load(Ordering::Relaxed) as usize,
             active_subscribers: self.global_channel.receiver_count() as u64,
         }
     }

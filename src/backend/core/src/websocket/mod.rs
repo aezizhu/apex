@@ -180,6 +180,9 @@ impl WebSocketState {
             active_rooms: room_count,
             broadcasts_sent: broadcast_stats.total_broadcasts,
             broadcasts_delivered: broadcast_stats.total_delivered,
+            broadcasts_failed: broadcast_stats.total_failed,
+            messages_in_queue: broadcast_stats.messages_in_queue,
+            active_broadcast_subscribers: broadcast_stats.active_subscribers,
         }
     }
 }
@@ -195,6 +198,9 @@ pub struct WebSocketStats {
     pub active_rooms: usize,
     pub broadcasts_sent: u64,
     pub broadcasts_delivered: u64,
+    pub broadcasts_failed: u64,
+    pub messages_in_queue: usize,
+    pub active_broadcast_subscribers: u64,
 }
 
 #[cfg(test)]
