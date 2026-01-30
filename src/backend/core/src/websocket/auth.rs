@@ -311,9 +311,12 @@ impl WebSocketAuth {
     /// Clear expired entries from the revocation list.
     /// Should be called periodically.
     pub fn cleanup_revocation_list(&self) {
-        // In a real implementation, this would remove entries
-        // older than the maximum token lifetime
-        // For now, this is a placeholder
+        let mut revoked = self.revoked_tokens.write().unwrap();
+        let before_count = revoked.len();
+        revoked.clear();
+        if before_count > 0 {
+            tracing::info!(removed = before_count, "Cleared revocation list");
+        }
     }
 }
 
