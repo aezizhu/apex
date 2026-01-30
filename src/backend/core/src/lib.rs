@@ -15,6 +15,7 @@
 //! - **Validation**: Comprehensive request validation with sync and async support
 //! - **Cache**: Multi-tier caching with tag-based invalidation and HTTP caching middleware
 //! - **Pagination**: Cursor and offset-based pagination utilities
+//! - **Plugins**: Plugin marketplace with manifest-driven discovery, sandboxed execution, and lifecycle management
 
 pub mod orchestrator;
 pub mod dag;
@@ -35,6 +36,7 @@ pub mod pagination;
 pub mod health;
 pub mod jobs;
 pub mod events;
+pub mod plugins;
 
 pub use error::{ApexError, Result, ErrorCode, ErrorContext, ErrorDetails, ErrorSeverity};
 
@@ -59,6 +61,12 @@ pub mod prelude {
         AuthLayer, AuthConfig, Claims, AuthError, AuthContext, AuthMethod,
         TracingLayer, TracingConfig, RequestContext,
         CompressionLayer, CompressionConfig, CompressionAlgorithm, CompressionLevel,
+        SecurityHeadersLayer, SecurityHeadersConfig, FrameOptions, ReferrerPolicy,
+        RequestSizeLayer, RequestSizeConfig,
+        AuditLayer, AuditConfig, AuditEntry, AuditLevel, AuditLogger,
+        CsrfLayer, CsrfConfig,
+        ApiKeyManager, ApiKeyConfig, ApiKeyEntry, GeneratedKey, KeyStatus,
+        InputSanitizerLayer, SanitizeConfig, InjectionType,
     };
     pub use crate::validation::{
         Validate, ValidateAsync, ValidateFull, ValidationRule,
