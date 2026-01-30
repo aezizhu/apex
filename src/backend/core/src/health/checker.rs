@@ -1232,4 +1232,202 @@ mod tests {
         let status = composite.check_combined().await;
         assert_eq!(status, HealthStatus::Degraded);
     }
+
+    #[test]
+    fn test_health_check_config_thorough() {
+        let config = HealthCheckConfig::thorough();
+        assert_eq!(config.timeout, Duration::from_secs(30));
+        assert!(config.include_details);
+    }
+
+    #[test]
+    fn test_health_check_config_fast() {
+        let config = HealthCheckConfig::fast();
+        assert_eq!(config.timeout, Duration::from_secs(2));
+    }
+
+    #[test]
+    fn test_health_check_config_default() {
+        let config = HealthCheckConfig::default();
+        assert_eq!(config.timeout, Duration::from_secs(5));
+    }
+
+    #[tokio::test]
+    async fn test_composite_checker_all_healthy() {
+        struct HealthyChecker;
+        #[async_trait]
+        impl HealthChecker for HealthyChecker {
+            fn name(&self) -> &str { "healthy" }
+            async fn check(&self) -> ComponentHealth {
+                ComponentHealth::healthy("healthy")
+            }
+        }
+
+        let composite = CompositeHealthChecker::new()
+            .add_checker(Arc::new(HealthyChecker))
+            .add_checker(Arc::new(HealthyChecker));
+
+        let status = composite.check_combined().await;
+        assert_eq!(status, HealthStatus::Healthy);
+    }
+
+    #[tokio::test]
+    async fn test_composite_checker_check_all_returns_components() {
+        struct NamedChecker(&'static str);
+        #[async_trait]
+        impl HealthChecker for NamedChecker {
+            fn name(&self) -> &str { self.0 }
+            async fn check(&self) -> ComponentHealth {
+                ComponentHealth::healthy(self.0)
+            }
+        }
+
+        let composite = CompositeHealthChecker::new()
+            .add_checker(Arc::new(NamedChecker("a")))
+            .add_checker(Arc::new(NamedChecker("b")));
+
+        let results = composite.check_all().await;
+        assert_eq!(results.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_composite_checker_empty() {
+        let composite = CompositeHealthChecker::new();
+        let status = composite.check_combined().await;
+        assert_eq!(status, HealthStatus::Healthy);
+    }
+
+    #[test]
+    fn test_composite_checker_default() {
+        let composite = CompositeHealthChecker::default();
+        assert!(composite.checkers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_worker_checker_name() {
+        let checker = WorkerHealthChecker::new(|| WorkerPoolStats {
+            name: "test".into(),
+            max_workers: 10,
+            available_permits: 10,
+            active_workers: 0,
+            tasks_submitted: 0,
+            tasks_succeeded: 0,
+            tasks_failed: 0,
+            tasks_unknown: 0,
+            acquire_timeouts: 0,
+            peak_concurrent: 0,
+            avg_wait_time_us: 0,
+            avg_exec_time_us: 0,
+            uptime_secs: 0,
+        });
+        assert_eq!(checker.name(), "workers");
+    }
+
+    #[tokio::test]
+    async fn test_worker_checker_high_failure_rate() {
+        let checker = WorkerHealthChecker::new(|| WorkerPoolStats {
+            name: "test".into(),
+            max_workers: 10,
+            available_permits: 5,
+            active_workers: 5,
+            tasks_submitted: 100,
+            tasks_succeeded: 20,
+            tasks_failed: 80,
+            tasks_unknown: 0,
+            acquire_timeouts: 0,
+            peak_concurrent: 5,
+            avg_wait_time_us: 100,
+            avg_exec_time_us: 1000,
+            uptime_secs: 3600,
+        })
+        .with_failure_rate_threshold(50.0);
+
+        let health = checker.check().await;
+        assert_eq!(health.status, HealthStatus::Unhealthy);
+    }
+
+    #[tokio::test]
+    async fn test_worker_checker_heartbeat() {
+        let checker = WorkerHealthChecker::new(|| WorkerPoolStats {
+            name: "test".into(),
+            max_workers: 4,
+            available_permits: 4,
+            active_workers: 0,
+            tasks_submitted: 0,
+            tasks_succeeded: 0,
+            tasks_failed: 0,
+            tasks_unknown: 0,
+            acquire_timeouts: 0,
+            peak_concurrent: 0,
+            avg_wait_time_us: 0,
+            avg_exec_time_us: 0,
+            uptime_secs: 100,
+        });
+        // record_heartbeat should not panic
+        checker.record_heartbeat();
+        let health = checker.check().await;
+        assert!(health.is_healthy());
+    }
+
+    #[test]
+    fn test_disk_space_checker_creation() {
+        let checker = DiskSpaceHealthChecker::new("/tmp")
+            .with_warning_threshold(70.0)
+            .with_critical_threshold(90.0);
+        assert_eq!(checker.path, "/tmp");
+        assert_eq!(checker.warning_threshold_pct, 70.0);
+        assert_eq!(checker.critical_threshold_pct, 90.0);
+    }
+
+    #[tokio::test]
+    async fn test_disk_space_checker_name() {
+        let checker = DiskSpaceHealthChecker::new("/");
+        assert_eq!(checker.name(), "disk_space");
+    }
+
+    #[test]
+    fn test_memory_checker_creation() {
+        let checker = MemoryHealthChecker::new()
+            .with_warning_threshold(80.0)
+            .with_critical_threshold(95.0);
+        assert_eq!(checker.warning_threshold_pct, 80.0);
+        assert_eq!(checker.critical_threshold_pct, 95.0);
+    }
+
+    #[test]
+    fn test_memory_checker_default() {
+        let checker = MemoryHealthChecker::default();
+        assert_eq!(checker.warning_threshold_pct, 85.0);
+        assert_eq!(checker.critical_threshold_pct, 95.0);
+    }
+
+    #[tokio::test]
+    async fn test_memory_checker_name() {
+        let checker = MemoryHealthChecker::new();
+        assert_eq!(checker.name(), "memory");
+    }
+
+    #[test]
+    fn test_format_bytes() {
+        assert_eq!(format_bytes(500), "500 B");
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        assert_eq!(format_bytes(1024 * 1024), "1.0 MB");
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.0 GB");
+        assert_eq!(format_bytes(1024u64 * 1024 * 1024 * 1024), "1.0 TB");
+    }
+
+    #[test]
+    fn test_format_bytes_fractional() {
+        assert_eq!(format_bytes(1536), "1.5 KB");
+    }
+
+    #[test]
+    fn test_external_api_checker_creation() {
+        let checker = ExternalApiHealthChecker::new("my-api", "http://localhost/health")
+            .with_expected_status(vec![200, 204])
+            .with_failure_threshold(5);
+        assert_eq!(checker.api_name, "my-api");
+        assert_eq!(checker.health_url, "http://localhost/health");
+        assert_eq!(checker.failure_threshold, 5);
+    }
 }

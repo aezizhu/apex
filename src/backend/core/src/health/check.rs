@@ -643,4 +643,219 @@ mod tests {
         let status: HealthStatus = serde_json::from_str("\"degraded\"").unwrap();
         assert_eq!(status, HealthStatus::Degraded);
     }
+
+    #[test]
+    fn test_health_status_is_healthy() {
+        assert!(HealthStatus::Healthy.is_healthy());
+        assert!(!HealthStatus::Degraded.is_healthy());
+        assert!(!HealthStatus::Unhealthy.is_healthy());
+    }
+
+    #[test]
+    fn test_health_status_is_operational() {
+        assert!(HealthStatus::Healthy.is_operational());
+        assert!(HealthStatus::Degraded.is_operational());
+        assert!(!HealthStatus::Unhealthy.is_operational());
+    }
+
+    #[test]
+    fn test_health_status_http_codes() {
+        assert_eq!(HealthStatus::Healthy.http_status_code(), 200);
+        assert_eq!(HealthStatus::Degraded.http_status_code(), 200);
+        assert_eq!(HealthStatus::Unhealthy.http_status_code(), 503);
+    }
+
+    #[test]
+    fn test_health_status_description() {
+        assert!(!HealthStatus::Healthy.description().is_empty());
+        assert!(!HealthStatus::Degraded.description().is_empty());
+        assert!(!HealthStatus::Unhealthy.description().is_empty());
+    }
+
+    #[test]
+    fn test_health_status_display() {
+        assert_eq!(format!("{}", HealthStatus::Healthy), "healthy");
+        assert_eq!(format!("{}", HealthStatus::Degraded), "degraded");
+        assert_eq!(format!("{}", HealthStatus::Unhealthy), "unhealthy");
+    }
+
+    #[test]
+    fn test_health_status_default() {
+        assert_eq!(HealthStatus::default(), HealthStatus::Healthy);
+    }
+
+    #[test]
+    fn test_health_status_combine_symmetric() {
+        assert_eq!(
+            HealthStatus::Unhealthy.combine(HealthStatus::Healthy),
+            HealthStatus::Unhealthy
+        );
+        assert_eq!(
+            HealthStatus::Unhealthy.combine(HealthStatus::Degraded),
+            HealthStatus::Unhealthy
+        );
+    }
+
+    #[test]
+    fn test_component_health_with_metadata() {
+        let health = ComponentHealth::healthy("db")
+            .with_metadata("version", "15.2")
+            .with_metadata("connections", 10u64);
+        assert_eq!(health.metadata.len(), 2);
+    }
+
+    #[test]
+    fn test_component_health_with_latency() {
+        let health = ComponentHealth::healthy("cache")
+            .with_latency(std::time::Duration::from_millis(42));
+        assert_eq!(health.latency_ms, Some(42));
+    }
+
+    #[test]
+    fn test_component_health_with_error_sets_unhealthy() {
+        let health = ComponentHealth::healthy("svc")
+            .with_error("connection refused");
+        assert_eq!(health.status, HealthStatus::Unhealthy);
+        assert!(health.error.is_some());
+    }
+
+    #[test]
+    fn test_component_health_with_status() {
+        let health = ComponentHealth::healthy("svc")
+            .with_status(HealthStatus::Degraded);
+        assert_eq!(health.status, HealthStatus::Degraded);
+    }
+
+    #[test]
+    fn test_component_health_from_result_ok() {
+        let result: std::result::Result<(), String> = Ok(());
+        let health = ComponentHealth::from_result("db", result);
+        assert!(health.is_healthy());
+    }
+
+    #[test]
+    fn test_component_health_from_result_err() {
+        let result: std::result::Result<(), String> = Err("conn failed".into());
+        let health = ComponentHealth::from_result("db", result);
+        assert_eq!(health.status, HealthStatus::Unhealthy);
+    }
+
+    #[test]
+    fn test_latency_threshold_below() {
+        let mut health = ComponentHealth::healthy("db").with_latency_ms(50);
+        health.check_latency_threshold(100);
+        assert_eq!(health.status, HealthStatus::Healthy);
+    }
+
+    #[test]
+    fn test_latency_threshold_no_latency() {
+        let mut health = ComponentHealth::healthy("db");
+        health.check_latency_threshold(100);
+        assert_eq!(health.status, HealthStatus::Healthy);
+    }
+
+    #[test]
+    fn test_health_report_default() {
+        let report = HealthReport::new();
+        assert_eq!(report.status, HealthStatus::Healthy);
+        assert!(report.components.is_empty());
+    }
+
+    #[test]
+    fn test_health_report_with_service() {
+        let report = HealthReport::new().with_service("my-service");
+        assert_eq!(report.service, "my-service");
+    }
+
+    #[test]
+    fn test_health_report_with_uptime() {
+        let report = HealthReport::new().with_uptime(std::time::Duration::from_secs(3600));
+        assert_eq!(report.uptime_seconds, Some(3600));
+    }
+
+    #[test]
+    fn test_health_report_with_metadata() {
+        let report = HealthReport::new().with_metadata("env", "prod");
+        assert!(report.metadata.contains_key("env"));
+    }
+
+    #[test]
+    fn test_health_report_get_component() {
+        let report = HealthReport::new()
+            .with_component(ComponentHealth::healthy("db"))
+            .with_component(ComponentHealth::healthy("cache"));
+        assert!(report.get_component("db").is_some());
+        assert!(report.get_component("cache").is_some());
+        assert!(report.get_component("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_health_report_with_components() {
+        let components = vec![
+            ComponentHealth::healthy("a"),
+            ComponentHealth::degraded("b"),
+            ComponentHealth::unhealthy("c"),
+        ];
+        let report = HealthReport::new().with_components(components);
+        assert_eq!(report.summary.total, 3);
+        assert_eq!(report.summary.healthy, 1);
+        assert_eq!(report.summary.degraded, 1);
+        assert_eq!(report.summary.unhealthy, 1);
+        assert_eq!(report.status, HealthStatus::Unhealthy);
+    }
+
+    #[test]
+    fn test_liveness_response_alive() {
+        let resp = LivenessResponse::alive();
+        assert!(resp.alive);
+    }
+
+    #[test]
+    fn test_liveness_response_default() {
+        let resp = LivenessResponse::default();
+        assert!(resp.alive);
+    }
+
+    #[test]
+    fn test_liveness_response_dead() {
+        let resp = LivenessResponse::dead();
+        assert!(!resp.alive);
+    }
+
+    #[test]
+    fn test_readiness_response_ready() {
+        let resp = ReadinessResponse::ready();
+        assert!(resp.ready);
+        assert!(resp.reason.is_none());
+    }
+
+    #[test]
+    fn test_readiness_response_not_ready() {
+        let resp = ReadinessResponse::not_ready("Still starting up");
+        assert!(!resp.ready);
+        assert_eq!(resp.reason, Some("Still starting up".to_string()));
+    }
+
+    #[test]
+    fn test_readiness_with_unready_component() {
+        let resp = ReadinessResponse::not_ready("Deps unhealthy")
+            .with_unready_component("db")
+            .with_unready_component("cache");
+        assert_eq!(resp.unready_components.len(), 2);
+    }
+
+    #[test]
+    fn test_readiness_response_default() {
+        let resp = ReadinessResponse::default();
+        assert!(resp.ready);
+    }
+
+    #[test]
+    fn test_readiness_from_degraded_report() {
+        let report = HealthReport::new()
+            .with_component(ComponentHealth::degraded("cache"));
+        let resp = ReadinessResponse::from_health_report(&report);
+        // Degraded is still operational, so should be ready
+        assert!(resp.ready);
+    }
 }

@@ -490,4 +490,183 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().has_errors("value"));
     }
+
+    #[test]
+    fn test_error_kind_display_all_variants() {
+        assert_eq!(ValidationErrorKind::Required.to_string(), "field is required");
+        assert_eq!(ValidationErrorKind::MinLength { min: 3, actual: 1 }.to_string(), "must be at least 3 characters (got 1)");
+        assert_eq!(ValidationErrorKind::MaxLength { max: 5, actual: 10 }.to_string(), "must be at most 5 characters (got 10)");
+        assert_eq!(ValidationErrorKind::ExactLength { expected: 4, actual: 3 }.to_string(), "must be exactly 4 characters (got 3)");
+        assert_eq!(ValidationErrorKind::MinValue { min: "0".into(), actual: "-1".into() }.to_string(), "must be at least 0 (got -1)");
+        assert_eq!(ValidationErrorKind::MaxValue { max: "100".into(), actual: "101".into() }.to_string(), "must be at most 100 (got 101)");
+        assert_eq!(ValidationErrorKind::Range { min: "0".into(), max: "10".into(), actual: "15".into() }.to_string(), "must be between 0 and 10 (got 15)");
+        assert_eq!(ValidationErrorKind::InvalidEmail.to_string(), "must be a valid email address");
+        assert_eq!(ValidationErrorKind::InvalidUrl.to_string(), "must be a valid URL");
+        assert_eq!(ValidationErrorKind::InvalidUuid.to_string(), "must be a valid UUID");
+        assert!(ValidationErrorKind::Pattern { pattern: "\\d+".into() }.to_string().contains("\\d+"));
+        assert!(ValidationErrorKind::NotInSet { allowed: vec!["a".into(), "b".into()] }.to_string().contains("a, b"));
+        assert_eq!(ValidationErrorKind::MinItems { min: 1, actual: 0 }.to_string(), "must have at least 1 items (got 0)");
+        assert_eq!(ValidationErrorKind::MaxItems { max: 3, actual: 5 }.to_string(), "must have at most 3 items (got 5)");
+        assert_eq!(ValidationErrorKind::DuplicateItems.to_string(), "must not contain duplicate items");
+        assert_eq!(ValidationErrorKind::Nested.to_string(), "nested validation failed");
+        assert!(ValidationErrorKind::Custom { code: "ERR001".into() }.to_string().contains("ERR001"));
+    }
+
+    #[test]
+    fn test_field_error_with_custom_message() {
+        let error = FieldError::with_message(ValidationErrorKind::Required, "Name is mandatory");
+        assert_eq!(error.to_string(), "Name is mandatory");
+        assert_eq!(error.kind, ValidationErrorKind::Required);
+    }
+
+    #[test]
+    fn test_field_error_with_code() {
+        let error = FieldError::new(ValidationErrorKind::Required).with_code("ERR_REQUIRED");
+        assert_eq!(error.code, Some("ERR_REQUIRED".to_string()));
+    }
+
+    #[test]
+    fn test_validation_errors_empty() {
+        let errors = ValidationErrors::new();
+        assert!(errors.is_empty());
+        assert_eq!(errors.error_count(), 0);
+        assert_eq!(errors.field_count(), 0);
+    }
+
+    #[test]
+    fn test_validation_errors_multiple_per_field() {
+        let mut errors = ValidationErrors::new();
+        errors.add_error("name", ValidationErrorKind::Required);
+        errors.add_error("name", ValidationErrorKind::MinLength { min: 2, actual: 0 });
+        assert_eq!(errors.field_count(), 1);
+        assert_eq!(errors.error_count(), 2);
+        assert_eq!(errors.get("name").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_validation_errors_add_with_message() {
+        let mut errors = ValidationErrors::new();
+        errors.add_with_message("email", ValidationErrorKind::InvalidEmail, "Please provide a valid email");
+        let field_errors = errors.get("email").unwrap();
+        assert_eq!(field_errors[0].message, "Please provide a valid email");
+    }
+
+    #[test]
+    fn test_validation_errors_to_message_map() {
+        let mut errors = ValidationErrors::new();
+        errors.add_required("name");
+        errors.add_error("email", ValidationErrorKind::InvalidEmail);
+        let map = errors.to_message_map();
+        assert!(map.contains_key("name"));
+        assert!(map.contains_key("email"));
+    }
+
+    #[test]
+    fn test_validation_errors_first_error() {
+        let mut errors = ValidationErrors::new();
+        errors.add_required("first_field");
+        let (field, error) = errors.first_error().unwrap();
+        assert_eq!(field, "first_field");
+        assert_eq!(error.kind, ValidationErrorKind::Required);
+    }
+
+    #[test]
+    fn test_validation_errors_display() {
+        let mut errors = ValidationErrors::new();
+        errors.add_required("name");
+        let display = errors.to_string();
+        assert!(display.contains("name"));
+        assert!(display.contains("required"));
+    }
+
+    #[test]
+    fn test_validation_errors_into_iter() {
+        let mut errors = ValidationErrors::new();
+        errors.add_required("a");
+        errors.add_required("b");
+        let collected: Vec<_> = errors.into_iter().collect();
+        assert_eq!(collected.len(), 2);
+    }
+
+    #[test]
+    fn test_builder_has_errors() {
+        let builder = ValidationErrorBuilder::new();
+        assert!(!builder.has_errors());
+    }
+
+    #[test]
+    fn test_builder_result_ok() {
+        let result = ValidationErrorBuilder::new().result();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_builder_result_err() {
+        let result = ValidationErrorBuilder::new()
+            .field("email")
+            .required()
+            .result();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_builder_error_with_message() {
+        let errors = ValidationErrorBuilder::new()
+            .field("age")
+            .error_with_message(ValidationErrorKind::MinValue { min: "18".into(), actual: "15".into() }, "Must be 18+")
+            .build();
+        assert!(errors.has_errors("age"));
+        let field_errors = errors.get("age").unwrap();
+        assert_eq!(field_errors[0].message, "Must be 18+");
+    }
+
+    #[test]
+    fn test_builder_no_field_set() {
+        // Adding error with no field set should be a no-op
+        let errors = ValidationErrorBuilder::new()
+            .error(ValidationErrorKind::Required)
+            .build();
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_merge_empty_field_prefix() {
+        let mut parent = ValidationErrors::new();
+        let mut child = ValidationErrors::new();
+        child.add_required("");
+        parent.merge_with_prefix("root", child);
+        assert!(parent.has_errors("root"));
+    }
+
+    #[test]
+    fn test_merge_overlapping_fields() {
+        let mut errors1 = ValidationErrors::new();
+        errors1.add_required("field");
+        let mut errors2 = ValidationErrors::new();
+        errors2.add_error("field", ValidationErrorKind::MinLength { min: 3, actual: 0 });
+        errors1.merge(errors2);
+        assert_eq!(errors1.error_count(), 2);
+        assert_eq!(errors1.field_count(), 1);
+    }
+
+    #[test]
+    fn test_to_flat_messages() {
+        let mut errors = ValidationErrors::new();
+        errors.add_required("name");
+        errors.add_error("email", ValidationErrorKind::InvalidEmail);
+        let messages = errors.to_flat_messages();
+        assert_eq!(messages.len(), 2);
+        assert!(messages.iter().any(|m| m.contains("name")));
+        assert!(messages.iter().any(|m| m.contains("email")));
+    }
+
+    #[test]
+    fn test_fields_iterator() {
+        let mut errors = ValidationErrors::new();
+        errors.add_required("a");
+        errors.add_required("b");
+        errors.add_required("c");
+        let fields: Vec<_> = errors.fields().collect();
+        assert_eq!(fields.len(), 3);
+    }
 }

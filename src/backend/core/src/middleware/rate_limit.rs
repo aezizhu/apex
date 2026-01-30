@@ -1071,4 +1071,197 @@ mod tests {
         // Can't test fully without async runtime, but config is correct
         assert!(config.ip_whitelist.contains(&ip));
     }
+
+    #[test]
+    fn test_token_bucket_refill() {
+        let mut bucket = TokenBucket::new(10, 10);
+        assert!(bucket.try_acquire(10));
+        assert!(!bucket.try_acquire(1));
+        bucket.last_refill = Instant::now() - Duration::from_secs(2);
+        assert!(bucket.try_acquire(1));
+    }
+
+    #[test]
+    fn test_token_bucket_time_until_available() {
+        let mut bucket = TokenBucket::new(10, 5);
+        bucket.try_acquire(10);
+        let wait = bucket.time_until_available(1);
+        assert!(wait > Duration::ZERO);
+    }
+
+    #[test]
+    fn test_sliding_window_weighted_count() {
+        let entry = WindowEntry::new(Duration::from_secs(60));
+        assert_eq!(entry.weighted_count(), 0);
+    }
+
+    #[test]
+    fn test_client_id_combined() {
+        let cid = ClientId::Combined {
+            ip: "10.0.0.1".parse().unwrap(),
+            api_key: "key123".into(),
+        };
+        let key = cid.to_key("rl:");
+        assert!(key.contains("10.0.0.1"));
+        assert!(key.contains("key123"));
+    }
+
+    #[test]
+    fn test_client_id_anonymous_key() {
+        let cid = ClientId::Anonymous;
+        let key = cid.to_key("rl:");
+        assert_eq!(key, "rl:anonymous");
+    }
+
+    #[test]
+    fn test_config_builder_all_options() {
+        let config = RateLimitConfig::builder()
+            .requests_per_second(100)
+            .burst_size(200)
+            .window_size_secs(30)
+            .graceful_degradation(true)
+            .build();
+        assert_eq!(config.requests_per_second, 100);
+        assert_eq!(config.burst_size, 200);
+        assert_eq!(config.window_size_secs, 30);
+        assert!(config.graceful_degradation);
+    }
+
+    #[test]
+    fn test_config_builder_endpoint_limit() {
+        let mut config = RateLimitConfig::builder()
+            .requests_per_second(10)
+            .build();
+        config.endpoint_limits.insert("/api/heavy".into(), 5);
+        assert_eq!(config.endpoint_limits.get("/api/heavy"), Some(&5));
+    }
+
+    #[test]
+    fn test_config_default_values() {
+        let config = RateLimitConfig::default();
+        assert!(config.enabled);
+        assert!(config.enable_ip_limiting);
+        assert!(config.enable_api_key_limiting);
+        assert!(config.graceful_degradation);
+        assert!(config.requests_per_second > 0);
+        assert!(config.burst_size > 0);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiter_disabled() {
+        let config = RateLimitConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        let limiter = RateLimiter::new(config).await.unwrap();
+        let client = ClientId::Ip("127.0.0.1".parse().unwrap());
+        let result = limiter.check(&client, "/test").await.unwrap();
+        assert!(result.allowed);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiter_whitelisted_ip() {
+        let ip = "10.0.0.1".parse().unwrap();
+        let config = RateLimitConfig {
+            enabled: true,
+            ip_whitelist: vec![ip],
+            requests_per_second: 1,
+            ..Default::default()
+        };
+        let limiter = RateLimiter::new(config).await.unwrap();
+        let client = ClientId::Ip(ip);
+        for _ in 0..20 {
+            let result = limiter.check(&client, "/test").await.unwrap();
+            assert!(result.allowed);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiter_whitelisted_api_key() {
+        let config = RateLimitConfig {
+            enabled: true,
+            api_key_whitelist: vec!["vip-key".into()],
+            requests_per_second: 1,
+            ..Default::default()
+        };
+        let limiter = RateLimiter::new(config).await.unwrap();
+        let client = ClientId::ApiKey("vip-key".into());
+        for _ in 0..20 {
+            let result = limiter.check(&client, "/test").await.unwrap();
+            assert!(result.allowed);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_token_bucket_check() {
+        let config = RateLimitConfig {
+            enabled: true,
+            burst_size: 5,
+            requests_per_second: 1,
+            ..Default::default()
+        };
+        let limiter = RateLimiter::new(config).await.unwrap();
+        let client = ClientId::Ip("10.0.0.2".parse().unwrap());
+        for _ in 0..5 {
+            let result = limiter.check_token_bucket(&client, 1);
+            assert!(result.allowed);
+        }
+        let result = limiter.check_token_bucket(&client, 1);
+        assert!(!result.allowed);
+    }
+
+    #[tokio::test]
+    async fn test_token_bucket_disabled() {
+        let config = RateLimitConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        let limiter = RateLimiter::new(config).await.unwrap();
+        let client = ClientId::Ip("10.0.0.3".parse().unwrap());
+        let result = limiter.check_token_bucket(&client, 1);
+        assert!(result.allowed);
+        assert_eq!(result.limit, u64::MAX);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup() {
+        let config = RateLimitConfig {
+            enabled: true,
+            requests_per_second: 10,
+            window_size_secs: 1,
+            ..Default::default()
+        };
+        let limiter = RateLimiter::new(config).await.unwrap();
+        let client = ClientId::Ip("10.0.0.4".parse().unwrap());
+        limiter.check(&client, "/test").await.unwrap();
+        limiter.cleanup_expired();
+    }
+
+    #[test]
+    fn test_extract_client_id_anonymous() {
+        let headers = HeaderMap::new();
+        let config = RateLimitConfig {
+            enable_ip_limiting: false,
+            enable_api_key_limiting: false,
+            ..Default::default()
+        };
+        let id = extract_client_id(&headers, None, &config);
+        assert!(matches!(id, ClientId::Anonymous));
+    }
+
+    #[test]
+    fn test_extract_client_id_ip_from_remote() {
+        let headers = HeaderMap::new();
+        let config = RateLimitConfig {
+            enable_ip_limiting: true,
+            enable_api_key_limiting: false,
+            ..Default::default()
+        };
+        let addr: SocketAddr = "192.168.1.1:8080".parse().unwrap();
+        let id = extract_client_id(&headers, Some(addr), &config);
+        match id {
+            ClientId::Ip(ip) => assert_eq!(ip.to_string(), "192.168.1.1"),
+            other => panic!("Expected ClientId::Ip, got {:?}", other),
+        }
+    }
 }

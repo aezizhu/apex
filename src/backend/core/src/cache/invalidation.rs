@@ -747,4 +747,152 @@ mod tests {
         let entity_event = InvalidationEvent::entity("task", "task-123");
         assert_eq!(entity_event.event_type(), "entity");
     }
+
+    #[test]
+    fn test_all_event_types() {
+        assert_eq!(InvalidationEvent::key("k").event_type(), "key");
+        assert_eq!(InvalidationEvent::tag("t").event_type(), "tag");
+        assert_eq!(InvalidationEvent::pattern("p").event_type(), "pattern");
+        assert_eq!(InvalidationEvent::entity("e", "id").event_type(), "entity");
+        assert_eq!(InvalidationEvent::namespace("ns").event_type(), "namespace");
+        assert_eq!(InvalidationEvent::All.event_type(), "all");
+        let cascade = InvalidationEvent::cascade(InvalidationEvent::key("k"), vec!["t".into()]);
+        assert_eq!(cascade.event_type(), "cascade");
+    }
+
+    #[test]
+    fn test_glob_to_regex_special_chars() {
+        assert_eq!(glob_to_regex("a.b").unwrap(), "^a\\.b$");
+        assert_eq!(glob_to_regex("a+b").unwrap(), "^a\\+b$");
+        assert_eq!(glob_to_regex("prefix*suffix").unwrap(), "^prefix.*suffix$");
+    }
+
+    #[test]
+    fn test_glob_to_regex_question_mark() {
+        let regex = glob_to_regex("a?c").unwrap();
+        assert_eq!(regex, "^a.c$");
+        let re = regex::Regex::new(&regex).unwrap();
+        assert!(re.is_match("abc"));
+        assert!(!re.is_match("abbc"));
+    }
+
+    #[tokio::test]
+    async fn test_tag_invalidation_empty_tag() {
+        let backend = create_test_backend().await;
+        let invalidation = TagInvalidation::new(backend.clone());
+        let count = invalidation.invalidate_tag("nonexistent").await.unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_strategy_names() {
+        let backend_arc: Arc<dyn CacheBackend> = Arc::new(InMemoryBackend::new(InMemoryConfig::default()));
+        let tag = TagInvalidation::new(backend_arc.clone());
+        let pattern = PatternInvalidation::new(backend_arc.clone());
+        let event = EventDrivenInvalidation::new(backend_arc, 100);
+        assert_eq!(tag.name(), "tag");
+        assert_eq!(pattern.name(), "pattern");
+        assert_eq!(event.name(), "event_driven");
+    }
+
+    #[tokio::test]
+    async fn test_engine_key_not_found() {
+        let backend = create_test_backend().await;
+        let engine = InvalidationEngine::new(backend.clone());
+        let deleted = engine.invalidate_key("nope").await.unwrap();
+        assert!(!deleted);
+    }
+
+    #[tokio::test]
+    async fn test_engine_invalidate_all() {
+        let backend = create_test_backend().await;
+        let engine = InvalidationEngine::new(backend.clone());
+        let entry = CacheEntry {
+            data: b"data".to_vec(),
+            ttl: Some(Duration::from_secs(60)),
+            tags: vec![],
+            created_at: Utc::now(),
+        };
+        backend.set("a", entry.clone()).await.unwrap();
+        backend.set("b", entry).await.unwrap();
+        engine.invalidate_all().await.unwrap();
+        assert!(!backend.exists("a").await.unwrap());
+        assert!(!backend.exists("b").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_engine_logging() {
+        let backend = create_test_backend().await;
+        let engine = InvalidationEngine::new(backend.clone());
+        let entry = CacheEntry {
+            data: b"x".to_vec(),
+            ttl: Some(Duration::from_secs(60)),
+            tags: vec!["t".into()],
+            created_at: Utc::now(),
+        };
+        backend.set("k1", entry).await.unwrap();
+        engine.invalidate_key("k1").await.unwrap();
+        let logs = engine.get_recent_invalidations(5);
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].count, 1);
+    }
+
+    #[test]
+    fn test_batch_default() {
+        let batch = InvalidationBatch::default();
+        assert!(batch.events.is_empty());
+    }
+
+    #[test]
+    fn test_batch_builder() {
+        let batch = InvalidationBatch::new()
+            .key("k1")
+            .tag("t1")
+            .pattern("p*")
+            .entity("task", "123");
+        assert_eq!(batch.events.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_event_driven_subscribe() {
+        let backend: Arc<dyn CacheBackend> = Arc::new(InMemoryBackend::new(InMemoryConfig::default()));
+        let event_inv = EventDrivenInvalidation::new(backend, 16);
+        let mut rx = event_inv.subscribe();
+        event_inv.publish(InvalidationEvent::key("sub-test")).await.unwrap();
+        let received = rx.recv().await.unwrap();
+        assert_eq!(received.event_type(), "key");
+    }
+
+    #[tokio::test]
+    async fn test_engine_by_pattern() {
+        let backend = create_test_backend().await;
+        let engine = InvalidationEngine::new(backend.clone());
+        let entry = CacheEntry {
+            data: b"d".to_vec(),
+            ttl: Some(Duration::from_secs(60)),
+            tags: vec![],
+            created_at: Utc::now(),
+        };
+        backend.set("pat:a", entry.clone()).await.unwrap();
+        backend.set("pat:b", entry.clone()).await.unwrap();
+        backend.set("other", entry).await.unwrap();
+        let count = engine.invalidate_by_pattern("pat:*").await.unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_engine_by_tag() {
+        let backend = create_test_backend().await;
+        let engine = InvalidationEngine::new(backend.clone());
+        let entry = CacheEntry {
+            data: b"d".to_vec(),
+            ttl: Some(Duration::from_secs(60)),
+            tags: vec!["my-tag".into()],
+            created_at: Utc::now(),
+        };
+        backend.set("tagged-1", entry.clone()).await.unwrap();
+        backend.set("tagged-2", entry).await.unwrap();
+        let count = engine.invalidate_by_tag("my-tag").await.unwrap();
+        assert_eq!(count, 2);
+    }
 }
