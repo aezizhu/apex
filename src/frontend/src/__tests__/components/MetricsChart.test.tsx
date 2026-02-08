@@ -116,8 +116,8 @@ describe('MetricsChart', () => {
       const chart = screen.getByTestId('plotly-chart')
       const layout = JSON.parse(chart.dataset.layout || '{}')
 
-      expect(layout.yaxis.title).toBe('Tasks')
-      expect(layout.yaxis2.title).toBe('Latency (ms)')
+      expect(layout.yaxis.title.text).toBe('Tasks')
+      expect(layout.yaxis2.title.text).toBe('Latency (ms)')
       expect(layout.yaxis2.overlaying).toBe('y')
       expect(layout.yaxis2.side).toBe('right')
     })
@@ -158,46 +158,26 @@ describe('MetricsChart', () => {
   })
 
   describe('data generation', () => {
-    it('generates 50 data points', () => {
+    it('starts with empty data arrays before API response', () => {
       render(<MetricsChart />)
       const chartData = screen.getByTestId('chart-data')
       const data = JSON.parse(chartData.textContent || '[]')
 
-      expect(data[0].x.length).toBe(50)
-      expect(data[0].y.length).toBe(50)
+      // Chart renders with two traces, each initially empty until API responds
+      expect(data).toHaveLength(2)
+      expect(data[0].x).toEqual([])
+      expect(data[0].y).toEqual([])
+      expect(data[1].x).toEqual([])
+      expect(data[1].y).toEqual([])
     })
 
-    it('generates timestamps in ISO format', () => {
+    it('has two traces for task completions and latency', () => {
       render(<MetricsChart />)
       const chartData = screen.getByTestId('chart-data')
       const data = JSON.parse(chartData.textContent || '[]')
 
-      // Check first timestamp is valid ISO string
-      expect(() => new Date(data[0].x[0])).not.toThrow()
-    })
-
-    it('generates task completions between 5 and 25', () => {
-      render(<MetricsChart />)
-      const chartData = screen.getByTestId('chart-data')
-      const data = JSON.parse(chartData.textContent || '[]')
-
-      const taskCompletions = data[0].y
-      taskCompletions.forEach((value: number) => {
-        expect(value).toBeGreaterThanOrEqual(5)
-        expect(value).toBeLessThan(25)
-      })
-    })
-
-    it('generates latency between 500 and 3500 ms', () => {
-      render(<MetricsChart />)
-      const chartData = screen.getByTestId('chart-data')
-      const data = JSON.parse(chartData.textContent || '[]')
-
-      const latencies = data[1].y
-      latencies.forEach((value: number) => {
-        expect(value).toBeGreaterThanOrEqual(500)
-        expect(value).toBeLessThan(3500)
-      })
+      expect(data[0].name).toBe('Tasks Completed')
+      expect(data[1].name).toBe('Avg Latency (ms)')
     })
   })
 
@@ -315,8 +295,8 @@ describe('MetricsChart', () => {
       const chart = screen.getByTestId('plotly-chart')
       const layout = JSON.parse(chart.dataset.layout || '{}')
 
-      expect(layout.yaxis.titlefont.color).toBe('#10b981') // Green for tasks
-      expect(layout.yaxis2.titlefont.color).toBe('#3b82f6') // Blue for latency
+      expect(layout.yaxis.title.font.color).toBe('#10b981') // Green for tasks
+      expect(layout.yaxis2.title.font.color).toBe('#3b82f6') // Blue for latency
     })
   })
 })

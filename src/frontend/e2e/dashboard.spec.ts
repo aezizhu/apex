@@ -56,6 +56,22 @@ test.describe('Dashboard Page', () => {
       await expect(page.locator('nav').getByRole('link', { name: /approvals/i })).toBeVisible()
       await expect(page.locator('nav').getByRole('link', { name: /settings/i })).toBeVisible()
     })
+
+    test('should show Apex logo in sidebar', async ({ page }) => {
+      await page.goto('/')
+
+      await expect(page.locator('text=Apex')).toBeVisible()
+    })
+
+    test('should render all four stat card icons', async ({ page }) => {
+      await page.goto('/')
+
+      // Each stat card has a colored icon container
+      await expect(page.locator('.bg-blue-500\\/10')).toBeVisible()
+      await expect(page.locator('.bg-green-500\\/10')).toBeVisible()
+      await expect(page.locator('.bg-purple-500\\/10')).toBeVisible()
+      await expect(page.locator('.bg-amber-500\\/10')).toBeVisible()
+    })
   })
 
   test.describe('Metrics Display', () => {
@@ -156,6 +172,33 @@ test.describe('Dashboard Page', () => {
         timeout: 5000,
       })
     })
+
+    test('should display zero metrics on initial load before data arrives', async ({ page }) => {
+      await page.goto('/')
+
+      // Before any WebSocket data, metrics should show default/zero values
+      await expect(page.locator('text=Active Agents')).toBeVisible()
+      const statCards = page.locator('.text-2xl.font-bold')
+      await expect(statCards.first()).toBeVisible()
+    })
+
+    test('should update multiple metrics simultaneously', async ({ page, wsMock }) => {
+      await page.goto('/')
+
+      await wsMock.sendMetricsUpdate(
+        createMockMetrics({
+          activeAgents: 42,
+          runningTasks: 17,
+          totalCost: 999.99,
+          totalTokens: 2500000,
+          successRate: 0.92,
+          avgLatencyMs: 200,
+        })
+      )
+
+      await expect(page.locator('text=42').first()).toBeVisible({ timeout: 5000 })
+      await expect(page.locator('text=17').first()).toBeVisible({ timeout: 5000 })
+    })
   })
 
   test.describe('Agent Swarm Grid', () => {
@@ -230,11 +273,41 @@ test.describe('Dashboard Page', () => {
       const agentHex = page.locator('svg').first()
       await agentHex.hover()
 
-      // Wait for hover card
+      // Check hover card content
       await expect(page.locator('text=HoverTest')).toBeVisible({ timeout: 5000 })
       await expect(page.locator('text=gpt-4-turbo')).toBeVisible()
       await expect(page.locator('text=/5\\/10/')).toBeVisible()
       await expect(page.locator('text=/92\\.0%/')).toBeVisible()
+    })
+
+    test('should reflect agent status changes in grid', async ({ page, wsMock }) => {
+      await page.goto('/')
+
+      // Send idle agent
+      await wsMock.sendAgentUpdate(createMockAgent({ id: 'flip-agent', name: 'FlipAgent', status: 'idle' }))
+      await expect(page.locator('text=/0 busy/')).toBeVisible({ timeout: 5000 })
+
+      // Update to busy
+      await wsMock.sendAgentUpdate(createMockAgent({ id: 'flip-agent', name: 'FlipAgent', status: 'busy' }))
+      await expect(page.locator('text=/1 busy/')).toBeVisible({ timeout: 5000 })
+    })
+
+    test('should handle many agents in the grid', async ({ page, wsMock }) => {
+      await page.goto('/')
+
+      // Send 20 agents
+      for (let i = 0; i < 20; i++) {
+        await wsMock.sendAgentUpdate(
+          createMockAgent({
+            id: `agent-${i}`,
+            name: `Agent${i}`,
+            status: i % 2 === 0 ? 'busy' : 'idle',
+          })
+        )
+      }
+
+      await expect(page.locator('text=/20 agents/')).toBeVisible({ timeout: 5000 })
+      await expect(page.locator('text=/10 busy/')).toBeVisible({ timeout: 5000 })
     })
   })
 
@@ -315,6 +388,50 @@ test.describe('Dashboard Page', () => {
       // Should only show 5 tasks max
       await expect(taskItems).toHaveCount(5, { timeout: 5000 })
     })
+
+    test('should display task cost and token info', async ({ page, wsMock }) => {
+      await page.goto('/')
+
+      await wsMock.sendTaskUpdate(
+        createMockTask({
+          id: 'cost-task',
+          name: 'Expensive Task',
+          status: 'completed',
+          tokensUsed: 10000,
+          costDollars: 0.50,
+        })
+      )
+
+      await expect(page.locator('text=Expensive Task')).toBeVisible({ timeout: 5000 })
+      await expect(page.locator('text=/\\$0\\.50/')).toBeVisible()
+    })
+
+    test('should order tasks by creation date (newest first)', async ({ page, wsMock }) => {
+      await page.goto('/')
+
+      const now = Date.now()
+      await wsMock.sendTaskUpdate(
+        createMockTask({
+          id: 'old-task',
+          name: 'Old Task',
+          createdAt: new Date(now - 120000).toISOString(),
+        })
+      )
+      await wsMock.sendTaskUpdate(
+        createMockTask({
+          id: 'new-task',
+          name: 'New Task',
+          createdAt: new Date(now).toISOString(),
+        })
+      )
+
+      await expect(page.locator('text=New Task')).toBeVisible({ timeout: 5000 })
+
+      // New Task should appear before Old Task
+      const taskSection = page.locator('.space-y-3')
+      const firstTaskItem = taskSection.locator('.flex.items-center.justify-between').first()
+      await expect(firstTaskItem).toContainText('New Task')
+    })
   })
 
   test.describe('Performance Trends Chart', () => {
@@ -322,6 +439,48 @@ test.describe('Dashboard Page', () => {
       await page.goto('/')
 
       await expect(page.locator('text=Performance Trends')).toBeVisible()
+    })
+
+    test('should have chart container with proper height', async ({ page }) => {
+      await page.goto('/')
+
+      const chartContainer = page.locator('.h-\\[300px\\]')
+      await expect(chartContainer).toBeVisible()
+    })
+  })
+
+  test.describe('Top Bar Stats', () => {
+    test('should show active agent count in header', async ({ page, wsMock }) => {
+      await page.goto('/')
+
+      await wsMock.sendMetricsUpdate(createMockMetrics({ activeAgents: 12 }))
+
+      await expect(page.locator('text=/12 active agents/')).toBeVisible({ timeout: 5000 })
+    })
+
+    test('should show running tasks count in header', async ({ page, wsMock }) => {
+      await page.goto('/')
+
+      await wsMock.sendMetricsUpdate(createMockMetrics({ runningTasks: 8 }))
+
+      await expect(page.locator('text=/8 running tasks/')).toBeVisible({ timeout: 5000 })
+    })
+
+    test('should show cost spent in header', async ({ page, wsMock }) => {
+      await page.goto('/')
+
+      await wsMock.sendMetricsUpdate(createMockMetrics({ totalCost: 42.1234 }))
+
+      await expect(page.locator('text=/\\$42\\.1234.*spent/')).toBeVisible({ timeout: 5000 })
+    })
+
+    test('should show success rate in header bar', async ({ page, wsMock }) => {
+      await page.goto('/')
+
+      await wsMock.sendMetricsUpdate(createMockMetrics({ successRate: 0.97 }))
+
+      await expect(page.locator('header').locator('text=Success Rate:')).toBeVisible()
+      await expect(page.locator('header').locator('text=/97\\.0%/')).toBeVisible({ timeout: 5000 })
     })
   })
 
@@ -373,6 +532,21 @@ test.describe('Dashboard Page', () => {
       // Page should still be functional, showing last known data
       await expect(page.locator('h1')).toHaveText('Dashboard')
     })
+
+    test('should show disconnected status when WebSocket closes', async ({ page }) => {
+      await page.goto('/')
+
+      // Close WebSocket
+      await page.evaluate(() => {
+        const ws = (window as unknown as { __mockWs?: { close: () => void } }).__mockWs
+        if (ws) {
+          ws.close()
+        }
+      })
+
+      // Should show disconnected indicator in sidebar
+      await expect(page.locator('text=Disconnected')).toBeVisible({ timeout: 5000 })
+    })
   })
 
   test.describe('Responsive Layout', () => {
@@ -391,6 +565,59 @@ test.describe('Dashboard Page', () => {
 
       // The layout should adjust for mobile
       await expect(page.locator('h1')).toHaveText('Dashboard')
+    })
+
+    test('should display all sections on tablet viewport', async ({ page, wsMock }) => {
+      await page.setViewportSize({ width: 768, height: 1024 })
+      await page.goto('/')
+
+      await expect(page.locator('text=Agent Swarm')).toBeVisible()
+      await expect(page.locator("text=Today's Summary")).toBeVisible()
+      await expect(page.locator('text=Recent Tasks')).toBeVisible()
+      await expect(page.locator('text=Performance Trends')).toBeVisible()
+    })
+
+    test('should display stat cards properly on large viewport', async ({ page }) => {
+      await page.setViewportSize({ width: 1920, height: 1080 })
+      await page.goto('/')
+
+      await expect(page.locator('text=Active Agents')).toBeVisible()
+      await expect(page.locator('text=Running Tasks')).toBeVisible()
+      await expect(page.locator('text=Total Cost')).toBeVisible()
+      await expect(page.locator('text=Total Tokens')).toBeVisible()
+    })
+  })
+
+  test.describe('Real-time Data Flow', () => {
+    test('should process sequential metric updates correctly', async ({ page, wsMock }) => {
+      await page.goto('/')
+
+      // Send 3 rapid metric updates
+      for (let i = 1; i <= 3; i++) {
+        await wsMock.sendMetricsUpdate(
+          createMockMetrics({
+            activeAgents: i * 10,
+            runningTasks: i * 5,
+          })
+        )
+      }
+
+      // Final values should be visible
+      await expect(page.locator('text=30').first()).toBeVisible({ timeout: 5000 })
+    })
+
+    test('should handle interleaved agent and task updates', async ({ page, wsMock }) => {
+      await page.goto('/')
+
+      // Alternate between agent and task updates
+      await wsMock.sendAgentUpdate(createMockAgent({ id: 'a1', name: 'Alpha', status: 'busy' }))
+      await wsMock.sendTaskUpdate(createMockTask({ id: 't1', name: 'Task Alpha', status: 'running' }))
+      await wsMock.sendAgentUpdate(createMockAgent({ id: 'a2', name: 'Beta', status: 'idle' }))
+      await wsMock.sendTaskUpdate(createMockTask({ id: 't2', name: 'Task Beta', status: 'completed' }))
+
+      // Both should be reflected
+      await expect(page.locator('text=/2 agents/')).toBeVisible({ timeout: 5000 })
+      await expect(page.locator('text=Task Alpha')).toBeVisible({ timeout: 5000 })
     })
   })
 })

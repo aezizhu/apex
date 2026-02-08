@@ -308,6 +308,9 @@ impl Default for CacheMiddlewareConfig {
             ],
             exclude_paths: vec![
                 "/health".to_string(),
+                "/health/ready".to_string(),
+                "/health/live".to_string(),
+                "/health/detailed".to_string(),
                 "/metrics".to_string(),
                 "/api/*/stream".to_string(),
             ],
@@ -1001,7 +1004,7 @@ mod tests {
 
     #[test]
     fn test_etag_from_version() {
-        let etag = ETagGenerator::from_version("v1.2.3");
+        let etag = ETagGenerator::from_version(1);
         assert!(etag.starts_with('"'));
         assert!(etag.ends_with('"'));
     }
@@ -1049,13 +1052,13 @@ mod tests {
         assert!(config.enable_etag);
         assert!(config.enable_cache_control);
         assert!(!config.use_weak_etag);
-        assert!(!config.excluded_paths.is_empty());
+        assert!(!config.exclude_paths.is_empty());
     }
 
     #[test]
     fn test_config_builder_excluded_paths() {
         let mut config = CacheMiddlewareConfig::default();
-        config.excluded_paths.push("/custom/*".to_string());
+        config.exclude_paths.push("/custom/*".to_string());
         assert!(config.is_excluded("/custom/something"));
     }
 

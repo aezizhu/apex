@@ -13,6 +13,7 @@ import {
   Eye,
   Wifi,
   WifiOff,
+  GitBranch,
 } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { cn } from '../lib/utils'
@@ -27,6 +28,7 @@ const navItems = [
   { path: '/agent-sight', icon: Eye, label: 'Agent Sight' },
   { path: '/tasks', icon: ListTodo, label: 'Tasks' },
   { path: '/approvals', icon: ShieldCheck, label: 'Approvals' },
+  { path: '/workflows', icon: GitBranch, label: 'Workflows' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ]
 

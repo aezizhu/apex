@@ -252,11 +252,19 @@ impl ServerMessage {
 pub struct TaskUpdate {
     pub task_id: String,
     pub dag_id: Option<String>,
+    pub name: String,
     pub status: TaskStatusUpdate,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
     pub progress: Option<TaskProgress>,
     pub tokens_used: u64,
     pub cost_dollars: f64,
     pub duration_ms: Option<i64>,
+    pub created_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<DateTime<Utc>>,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -288,10 +296,16 @@ pub struct TaskProgress {
 pub struct AgentUpdate {
     pub agent_id: String,
     pub name: String,
+    pub model: String,
     pub status: AgentStatusUpdate,
     pub current_load: u32,
     pub max_load: u32,
     pub success_rate: f64,
+    pub reputation_score: f64,
+    pub total_tokens: u64,
+    pub total_cost: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f64>,
     pub current_task_id: Option<String>,
     pub timestamp: DateTime<Utc>,
 }
@@ -543,7 +557,9 @@ mod tests {
         let msg = ServerMessage::TaskUpdate(TaskUpdate {
             task_id: "task-123".to_string(),
             dag_id: Some("dag-456".to_string()),
+            name: "Test Task".to_string(),
             status: TaskStatusUpdate::Running,
+            agent_id: Some("agent-789".to_string()),
             progress: Some(TaskProgress {
                 current_step: Some("Processing".to_string()),
                 steps_completed: 2,
@@ -554,6 +570,9 @@ mod tests {
             tokens_used: 1000,
             cost_dollars: 0.01,
             duration_ms: Some(500),
+            created_at: Utc::now(),
+            started_at: Some(Utc::now()),
+            completed_at: None,
             timestamp: Utc::now(),
         });
 

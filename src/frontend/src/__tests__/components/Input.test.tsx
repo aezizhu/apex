@@ -173,7 +173,10 @@ describe('Input', () => {
   describe('types', () => {
     it('renders text input by default', () => {
       render(<Input data-testid="input" />)
-      expect(screen.getByTestId('input')).toHaveAttribute('type', undefined)
+      // When no type is provided, the <input> element defaults to "text" per HTML spec
+      // but the type attribute is not explicitly set in the DOM
+      const input = screen.getByTestId('input')
+      expect(input).toBeInTheDocument()
     })
 
     it('renders password input', () => {

@@ -29,6 +29,13 @@ from tenacity import (
 from apex_agents.agent import Agent, AgentConfig, TaskInput, TaskOutput
 from apex_agents.config import Settings, get_settings
 from apex_agents.llm import LLMClient
+from apex_agents.metrics import MetricsCollector, MetricsPersister
+from apex_agents.persistence import (
+    AgentStateRecord,
+    AgentStateStore,
+    TaskResultRecord,
+    TaskResultStore,
+)
 from apex_agents.tools import ToolRegistry, create_default_registry
 from apex_agents.tracing import (
     TaskSpanContext,
@@ -421,6 +428,12 @@ class AgentExecutor:
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
         self._semaphore: asyncio.Semaphore | None = None
 
+        # Metrics & persistence
+        self._metrics_collectors: dict[str, MetricsCollector] = {}
+        self._metrics_persister: MetricsPersister | None = None
+        self._task_result_store: TaskResultStore | None = None
+        self._agent_state_store: AgentStateStore | None = None
+
         self._logger = logger.bind(component="agent_executor")
         self._tracer = get_tracer("apex_agents.executor")
 
@@ -448,6 +461,17 @@ class AgentExecutor:
 
         # Initialize concurrency semaphore
         self._semaphore = asyncio.Semaphore(self.settings.worker.num_agents)
+
+        # Initialize metrics persister
+        db_url = self.settings.database.url
+        self._metrics_persister = MetricsPersister(database_url=db_url)
+        await self._metrics_persister.start()
+
+        # Initialize persistence stores
+        self._task_result_store = TaskResultStore(db_url)
+        await self._task_result_store.connect()
+        self._agent_state_store = AgentStateStore(db_url)
+        await self._agent_state_store.connect()
 
         # Create default agent pool
         await self._create_agent_pool()
@@ -482,6 +506,16 @@ class AgentExecutor:
             except asyncio.TimeoutError:
                 self._logger.warning("Timeout waiting for tasks to complete")
 
+        # Flush metrics and close persistence stores
+        if self._metrics_persister:
+            await self._metrics_persister.stop()
+
+        if self._task_result_store:
+            await self._task_result_store.close()
+
+        if self._agent_state_store:
+            await self._agent_state_store.close()
+
         # Close connections
         if self._task_queue:
             await self._task_queue.close()
@@ -512,6 +546,7 @@ class AgentExecutor:
             tool_registry=self.tool_registry,
         )
         self._agents["default"] = agent
+        self._ensure_metrics_collector(agent)
 
     def get_agent(self, name: str | None = None) -> Agent:
         """
@@ -535,15 +570,48 @@ class AgentExecutor:
         """
         Register an agent with the executor.
 
+        Also creates a ``MetricsCollector`` for the agent and registers it
+        with the background persister so metrics are flushed to PostgreSQL.
+
         Args:
             agent: Agent to register.
         """
         self._agents[agent.config.name] = agent
+        self._ensure_metrics_collector(agent)
         self._logger.info(
             "Registered agent",
             name=agent.config.name,
             model=agent.config.model,
         )
+
+    def _ensure_metrics_collector(self, agent: Agent) -> MetricsCollector:
+        """
+        Get or create a MetricsCollector for the given agent.
+
+        If a collector doesn't exist yet, one is created and registered
+        with the background MetricsPersister for periodic flushing.
+
+        Args:
+            agent: The agent to get/create a collector for.
+
+        Returns:
+            The MetricsCollector for this agent.
+        """
+        agent_name = agent.config.name
+        if agent_name not in self._metrics_collectors:
+            collector = MetricsCollector(
+                agent_id=str(agent.id),
+                session_id=None,
+            )
+            self._metrics_collectors[agent_name] = collector
+            if self._metrics_persister:
+                self._metrics_persister.register(collector)
+            self._logger.debug(
+                "Created metrics collector",
+                agent_name=agent_name,
+                agent_id=str(agent.id),
+            )
+        return self._metrics_collectors[agent_name]
 
     async def pull_and_execute(self) -> TaskResult | None:
         """
@@ -640,6 +708,23 @@ class AgentExecutor:
                     else None,
                 )
 
+                # Record metrics via collector
+                collector = self._ensure_metrics_collector(agent)
+                collector.record_task(
+                    success=True,
+                    tokens_used=agent.metrics.tokens_used,
+                    cost=agent.metrics.cost_dollars,
+                    latency_ms=float(duration_ms),
+                    tool_calls=agent.metrics.tool_calls,
+                    model=agent.config.model,
+                )
+
+                # Persist task result
+                await self._persist_task_result(task, agent, result)
+
+                # Save agent state
+                await self._persist_agent_state(agent, "idle")
+
                 self._logger.info(
                     "Task completed successfully",
                     task_id=task.id,
@@ -658,6 +743,7 @@ class AgentExecutor:
                 )
                 return await self._handle_task_failure(
                     task,
+                    agent,
                     f"Task timed out after {self.settings.worker.max_task_duration_seconds} seconds",
                     start_time,
                 )
@@ -668,11 +754,12 @@ class AgentExecutor:
                     task_id=task.id,
                     error=str(e),
                 )
-                return await self._handle_task_failure(task, str(e), start_time)
+                return await self._handle_task_failure(task, agent, str(e), start_time)
 
     async def _handle_task_failure(
         self,
         task: QueuedTask,
+        agent: Agent,
         error: str,
         start_time: datetime,
     ) -> TaskResult:
@@ -681,6 +768,7 @@ class AgentExecutor:
 
         Args:
             task: The failed task.
+            agent: The agent that attempted execution.
             error: Error message.
             start_time: When execution started.
 
@@ -689,6 +777,17 @@ class AgentExecutor:
         """
         end_time = datetime.now(timezone.utc)
         duration_ms = int((end_time - start_time).total_seconds() * 1000)
+
+        # Record failure metrics
+        collector = self._ensure_metrics_collector(agent)
+        collector.record_task(
+            success=False,
+            tokens_used=agent.metrics.tokens_used,
+            cost=agent.metrics.cost_dollars,
+            latency_ms=float(duration_ms),
+            tool_calls=agent.metrics.tool_calls,
+            model=agent.config.model,
+        )
 
         # Check if task should be retried
         if task.retry_count < task.max_retries:
@@ -701,12 +800,79 @@ class AgentExecutor:
             if self._task_queue:
                 await self._task_queue.requeue_task(task)
 
-        return TaskResult(
+        result = TaskResult(
             task_id=task.id,
             status=TaskStatus.FAILED,
             error=error,
             duration_ms=duration_ms,
         )
+
+        # Persist failed task result
+        await self._persist_task_result(task, agent, result)
+
+        # Save agent state as error
+        await self._persist_agent_state(agent, "error")
+
+        return result
+
+    async def _persist_task_result(
+        self,
+        task: QueuedTask,
+        agent: Agent,
+        result: TaskResult,
+    ) -> None:
+        """Persist a task result to the database."""
+        if not self._task_result_store:
+            return
+        try:
+            collector = self._metrics_collectors.get(agent.config.name)
+            session_id = collector.session_id if collector else "unknown"
+            record = TaskResultRecord(
+                task_id=task.id,
+                agent_id=str(agent.id),
+                session_id=session_id,
+                status=result.status.value,
+                result_text=result.result,
+                result_data=result.data,
+                error=result.error,
+                tokens_used=result.tokens_used,
+                cost_dollars=result.cost_dollars,
+                duration_ms=result.duration_ms,
+            )
+            await self._task_result_store.save(record)
+        except Exception:
+            self._logger.exception(
+                "Failed to persist task result",
+                task_id=task.id,
+            )
+
+    async def _persist_agent_state(self, agent: Agent, status: str) -> None:
+        """Persist current agent state to the database."""
+        if not self._agent_state_store:
+            return
+        try:
+            collector = self._metrics_collectors.get(agent.config.name)
+            session_id = collector.session_id if collector else "unknown"
+            record = AgentStateRecord(
+                agent_id=str(agent.id),
+                agent_name=agent.config.name,
+                session_id=session_id,
+                state_data={
+                    "status": status,
+                    "model": agent.config.model,
+                    "tokens_used": agent.metrics.tokens_used,
+                    "cost_dollars": agent.metrics.cost_dollars,
+                    "iterations": agent.metrics.iterations,
+                    "tool_calls": agent.metrics.tool_calls,
+                },
+                status=status,
+            )
+            await self._agent_state_store.save(record)
+        except Exception:
+            self._logger.exception(
+                "Failed to persist agent state",
+                agent_name=agent.config.name,
+            )
 
     def _get_agent_for_task(self, task: QueuedTask) -> Agent:
         """

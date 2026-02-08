@@ -9,7 +9,10 @@
 //!
 //! V1 is the current stable API version.
 
+pub mod agents;
+pub mod approvals;
 pub mod plugins;
 pub mod routes;
+pub mod settings;
 
 pub use routes::{v1_router, V1_PREFIX};

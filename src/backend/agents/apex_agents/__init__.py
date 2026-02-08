@@ -34,6 +34,8 @@ from apex_agents.tracing import (
     traced_async,
 )
 from apex_agents.bidding import AgentBid, AwardDecision, BiddingAgent, TaskAnnouncement
+from apex_agents.metrics import MetricsCollector, MetricsPersister, MetricsSnapshot
+from apex_agents.persistence import AgentStateStore, ConversationHistory, TaskResultStore
 from apex_agents.worker import Worker, WorkerPool, WorkerState
 
 __all__ = [
@@ -85,4 +87,12 @@ __all__ = [
     "traced",
     "traced_async",
     "TaskSpanContext",
+    # Metrics
+    "MetricsCollector",
+    "MetricsPersister",
+    "MetricsSnapshot",
+    # Persistence
+    "AgentStateStore",
+    "TaskResultStore",
+    "ConversationHistory",
 ]

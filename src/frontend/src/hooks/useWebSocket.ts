@@ -13,6 +13,37 @@ interface WsMessage {
   [key: string]: unknown
 }
 
+/**
+ * Maps a backend AgentStatusUpdate value to the frontend store status.
+ * Backend sends snake_case enum values: "idle", "busy", "paused", "error", "offline".
+ */
+function mapAgentStatus(status: string): 'idle' | 'busy' | 'error' | 'paused' {
+  switch (status) {
+    case 'idle': return 'idle'
+    case 'busy': return 'busy'
+    case 'paused': return 'paused'
+    case 'error':
+    case 'offline': return 'error'
+    default: return 'idle'
+  }
+}
+
+/**
+ * Maps a backend TaskStatusUpdate value to the frontend store status.
+ */
+function mapTaskStatus(status: string): 'pending' | 'ready' | 'running' | 'completed' | 'failed' | 'cancelled' {
+  switch (status) {
+    case 'pending': return 'pending'
+    case 'ready': return 'ready'
+    case 'running':
+    case 'retrying': return 'running'
+    case 'completed': return 'completed'
+    case 'failed': return 'failed'
+    case 'cancelled': return 'cancelled'
+    default: return 'pending'
+  }
+}
+
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectAttempts = useRef(0)
@@ -27,9 +58,9 @@ export function useWebSocket() {
         const data = JSON.parse(event.data) as WsMessage
 
         switch (data.type) {
+          // ── Connection lifecycle ──────────────────────────────────────
           case 'connected': {
             console.log('[WS] Connected to Apex')
-            // Store session ID for recovery on reconnect
             const sessionId = data.session_id as string | undefined
             if (sessionId) {
               sessionStorage.setItem(SESSION_STORAGE_KEY, sessionId)
@@ -41,69 +72,89 @@ export function useWebSocket() {
             console.log('[WS] Session restored successfully')
             break
 
-          case 'AgentUpdate':
+          case 'subscribed':
+            // Subscription confirmed by server
+            break
+
+          case 'heartbeat':
+            // Server heartbeat — no action needed
+            break
+
+          // ── Agent updates ────────────────────────────────────────────
+          // Backend serializes ServerMessage::AgentUpdate as "agent_update"
+          case 'agent_update':
             setAgent({
-              id: data.id as string,
+              id: data.agent_id as string,
               name: data.name as string || 'Unknown',
-              model: data.model as string || 'unknown',
-              status: data.status as 'idle' | 'busy' | 'error' | 'paused',
-              currentLoad: data.currentLoad as number || 0,
-              maxLoad: data.maxLoad as number || 10,
-              successRate: data.successRate as number || 1,
-              reputationScore: data.reputationScore as number || 1,
-              totalTokens: data.totalTokens as number || 0,
-              totalCost: data.totalCost as number || 0,
+              model: (data.model as string) || 'unknown',
+              status: mapAgentStatus(data.status as string),
+              currentLoad: (data.current_load as number) || 0,
+              maxLoad: (data.max_load as number) || 10,
+              successRate: (data.success_rate as number) || 1,
+              reputationScore: (data.reputation_score as number) || 1,
+              totalTokens: (data.total_tokens as number) || 0,
+              totalCost: (data.total_cost as number) || 0,
               confidence: data.confidence as number | undefined,
             })
             break
 
-          case 'TaskUpdate':
+          // ── Task updates ─────────────────────────────────────────────
+          case 'task_update':
             setTask({
-              id: data.id as string,
-              dagId: data.dagId as string || '',
-              name: data.name as string || 'Unknown Task',
-              status: data.status as 'pending' | 'ready' | 'running' | 'completed' | 'failed' | 'cancelled',
-              agentId: data.agentId as string | undefined,
-              tokensUsed: data.tokensUsed as number || 0,
-              costDollars: data.costDollars as number || 0,
-              createdAt: data.createdAt as string || new Date().toISOString(),
-              startedAt: data.startedAt as string | undefined,
-              completedAt: data.completedAt as string | undefined,
+              id: data.task_id as string,
+              dagId: (data.dag_id as string) || '',
+              name: (data.name as string) || 'Unknown Task',
+              status: mapTaskStatus(data.status as string),
+              agentId: data.agent_id as string | undefined,
+              tokensUsed: (data.tokens_used as number) || 0,
+              costDollars: (data.cost_dollars as number) || 0,
+              createdAt: (data.created_at as string) || (data.timestamp as string) || new Date().toISOString(),
+              startedAt: data.started_at as string | undefined,
+              completedAt: data.completed_at as string | undefined,
             })
             break
 
-          case 'MetricsUpdate':
+          // ── Metrics snapshot ─────────────────────────────────────────
+          // Backend sends ServerMessage::Metrics with nested agents/tasks/resources
+          case 'metrics': {
+            const agents = data.agents as Record<string, number> | undefined
+            const tasks = data.tasks as Record<string, number> | undefined
+            const resources = data.resources as Record<string, number> | undefined
             setMetrics({
-              totalTasks: data.totalTasks as number,
-              completedTasks: data.completedTasks as number,
-              failedTasks: data.failedTasks as number,
-              runningTasks: data.runningTasks as number,
-              totalAgents: data.totalAgents as number,
-              activeAgents: data.activeAgents as number,
-              totalTokens: data.totalTokens as number,
-              totalCost: data.totalCost as number,
+              totalAgents: agents?.total as number ?? 0,
+              activeAgents: agents?.active as number ?? 0,
+              runningTasks: tasks?.running as number ?? 0,
+              completedTasks: tasks?.completed_last_hour as number ?? 0,
+              failedTasks: tasks?.failed_last_hour as number ?? 0,
+              totalTokens: resources?.total_tokens_used as number ?? 0,
+              totalCost: resources?.total_cost_dollars as number ?? 0,
+              avgLatencyMs: tasks?.avg_duration_ms as number ?? 0,
+              successRate: agents?.avg_success_rate as number ?? 0,
             })
             break
+          }
 
-          case 'ApprovalRequest':
+          // ── Approval requests ────────────────────────────────────────
+          case 'approval_required':
             addApproval({
-              id: data.id as string,
-              taskId: data.taskId as string,
-              agentId: data.agentId as string,
-              actionType: data.actionType as string,
-              actionData: data.actionData as Record<string, unknown>,
-              riskScore: data.riskScore as number,
+              id: data.request_id as string,
+              taskId: data.task_id as string,
+              agentId: data.agent_id as string,
+              actionType: data.approval_type as string,
+              actionData: data.details as Record<string, unknown> || {},
+              riskScore: 0,
               status: 'pending',
-              createdAt: new Date().toISOString(),
+              createdAt: (data.created_at as string) || new Date().toISOString(),
             })
             break
 
+          // ── Keep-alive ───────────────────────────────────────────────
           case 'pong':
-            // Keep-alive response
             break
 
-          case 'Error':
-            console.error('[WS] Server error:', data.message)
+          // ── Errors ───────────────────────────────────────────────────
+          case 'error':
+            console.error('[WS] Server error:', data.message || data.code)
             break
 
           default:
@@ -137,16 +188,16 @@ export function useWebSocket() {
       if (isReconnect && previousSessionId) {
         console.log('[WS] Attempting session recovery:', previousSessionId)
         ws.send(JSON.stringify({
-          type: 'SessionRestore',
+          type: 'session_restore',
           session_id: previousSessionId,
         }))
       }
 
-      // Subscribe to all updates
-      ws.send(JSON.stringify({ type: 'Subscribe', resource: 'agents' }))
-      ws.send(JSON.stringify({ type: 'Subscribe', resource: 'tasks' }))
-      ws.send(JSON.stringify({ type: 'Subscribe', resource: 'metrics' }))
-      ws.send(JSON.stringify({ type: 'Subscribe', resource: 'approvals' }))
+      // Subscribe to all updates — must match backend SubscriptionTarget enum
+      ws.send(JSON.stringify({ type: 'subscribe', target: { resource: 'all_agents' } }))
+      ws.send(JSON.stringify({ type: 'subscribe', target: { resource: 'all_tasks' } }))
+      ws.send(JSON.stringify({ type: 'subscribe', target: { resource: 'metrics', interval_secs: 5 } }))
+      ws.send(JSON.stringify({ type: 'subscribe', target: { resource: 'approvals' } }))
     }
 
     ws.onmessage = handleMessage
@@ -188,7 +239,7 @@ export function useWebSocket() {
   useEffect(() => {
     const pingInterval = setInterval(() => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'Ping' }))
+        wsRef.current.send(JSON.stringify({ type: 'ping' }))
       }
     }, 30000)
 

@@ -11,15 +11,29 @@ use axum::{
     Json,
 };
 use futures::future::BoxFuture;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tower::{Layer, Service};
-use tracing::warn;
+use tracing::{info, warn};
 
 use super::models::{OrganizationId, Permission, UserId};
 use super::policy::PolicyEngine;
 use crate::middleware::auth::AuthContext;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Dev-mode bypass
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Returns `true` when RBAC enforcement should be skipped entirely.
+///
+/// The bypass activates when the environment variable `APEX_DEV_MODE` is set to
+/// `"1"` or `"true"` (case-insensitive).  This is intended **only** for local
+/// development; production deployments must never set this variable.
+pub fn is_dev_mode() -> bool {
+    std::env::var("APEX_DEV_MODE")
+        .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true"))
+        .unwrap_or(false)
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RBAC Context (extracted in handlers)
@@ -147,6 +161,21 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
+            // ── Dev-mode bypass ─────────────────────────────────────────
+            if is_dev_mode() {
+                info!(
+                    permission = %permission,
+                    "RBAC bypassed (APEX_DEV_MODE enabled)"
+                );
+                let rbac_ctx = RbacContext {
+                    user_id: UserId::new("dev-user"),
+                    organization_id: OrganizationId::new("dev-org"),
+                    checked_permission: Some(permission),
+                };
+                request.extensions_mut().insert(rbac_ctx);
+                return inner.call(request).await;
+            }
+
             // Extract auth context set by upstream auth middleware.
             let auth_ctx = request
                 .extensions()
@@ -273,5 +302,34 @@ mod tests {
         let layer = RequirePermissionLayer::new(engine, "swarm:create");
         assert_eq!(layer.permission.resource, "swarm");
         assert_eq!(layer.permission.action, "create");
+    }
+
+    #[test]
+    fn test_dev_mode_disabled_by_default() {
+        // Ensure the variable is not set for this test.
+        std::env::remove_var("APEX_DEV_MODE");
+        assert!(!is_dev_mode());
+    }
+
+    #[test]
+    fn test_dev_mode_enabled() {
+        std::env::set_var("APEX_DEV_MODE", "true");
+        assert!(is_dev_mode());
+        // Clean up.
+        std::env::remove_var("APEX_DEV_MODE");
+    }
+
+    #[test]
+    fn test_dev_mode_enabled_with_1() {
+        std::env::set_var("APEX_DEV_MODE", "1");
+        assert!(is_dev_mode());
+        std::env::remove_var("APEX_DEV_MODE");
+    }
+
+    #[test]
+    fn test_dev_mode_not_enabled_with_random_value() {
+        std::env::set_var("APEX_DEV_MODE", "yes");
+        assert!(!is_dev_mode());
+        std::env::remove_var("APEX_DEV_MODE");
     }
 }

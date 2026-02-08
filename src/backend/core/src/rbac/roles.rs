@@ -11,7 +11,7 @@
 
 use std::collections::HashSet;
 
-use super::models::{Permission, Role, RoleId};
+use super::models::{Permission, Role};
 
 /// Predefined role templates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

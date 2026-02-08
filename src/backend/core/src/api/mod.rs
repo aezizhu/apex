@@ -78,6 +78,14 @@ pub use versioning::{
 pub struct AppState {
     pub orchestrator: Arc<SwarmOrchestrator>,
     pub db: Arc<Database>,
+    pub plugin_registry: Arc<PluginRegistry>,
+}
+
+impl AppState {
+    /// Get the plugin registry.
+    pub fn plugin_registry(&self) -> Arc<PluginRegistry> {
+        self.plugin_registry.clone()
+    }
 }
 
 /// Build the API router with versioning support.
@@ -110,6 +118,8 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         // Unversioned endpoints (health, metrics, websocket)
         .route("/health", get(handlers::health_check))
+        .route("/health/ready", get(handlers::health_check))
+        .route("/health/live", get(crate::health::routes::liveness_check))
         .route("/metrics", get(handlers::prometheus_metrics))
         .route("/ws", get(websocket::ws_handler))
         // API version info endpoint
@@ -143,6 +153,8 @@ pub fn build_router_with_config(state: AppState, version_config: VersionConfig) 
     Router::new()
         // Unversioned endpoints
         .route("/health", get(handlers::health_check))
+        .route("/health/ready", get(handlers::health_check))
+        .route("/health/live", get(crate::health::routes::liveness_check))
         .route("/metrics", get(handlers::prometheus_metrics))
         .route("/ws", get(websocket::ws_handler))
         // API version info endpoint

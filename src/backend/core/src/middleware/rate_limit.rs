@@ -1091,7 +1091,7 @@ mod tests {
 
     #[test]
     fn test_sliding_window_weighted_count() {
-        let entry = WindowEntry::new(Duration::from_secs(60));
+        let mut entry = WindowEntry::new(Duration::from_secs(60));
         assert_eq!(entry.weighted_count(), 0);
     }
 
@@ -1132,8 +1132,12 @@ mod tests {
         let mut config = RateLimitConfig::builder()
             .requests_per_second(10)
             .build();
-        config.endpoint_limits.insert("/api/heavy".into(), 5);
-        assert_eq!(config.endpoint_limits.get("/api/heavy"), Some(&5));
+        config.endpoint_limits.insert("/api/heavy".into(), EndpointLimit {
+            requests_per_window: 5,
+            window_size_secs: 60,
+            burst_size: None,
+        });
+        assert!(config.endpoint_limits.contains_key("/api/heavy"));
     }
 
     #[test]

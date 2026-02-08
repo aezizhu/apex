@@ -405,6 +405,9 @@ impl Default for AuthConfig {
             api_keys: std::collections::HashMap::new(),
             public_paths: vec![
                 "/health".to_string(),
+                "/health/ready".to_string(),
+                "/health/live".to_string(),
+                "/health/detailed".to_string(),
                 "/ready".to_string(),
                 "/metrics".to_string(),
             ],

@@ -86,7 +86,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(apex_agents_total)",
+          "expr": "sum(apex_agent_spawns_total)",
           "legendFormat": "Total",
           "range": true,
           "refId": "A"
@@ -146,7 +146,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(apex_agents_active)",
+          "expr": "sum(apex_active_agents)",
           "legendFormat": "Active",
           "range": true,
           "refId": "A"
@@ -214,7 +214,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(apex_agents_idle)",
+          "expr": "sum(apex_agent_spawns_total) - sum(apex_active_agents)",
           "legendFormat": "Idle",
           "range": true,
           "refId": "A"
@@ -282,7 +282,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "(sum(apex_agents_active) / sum(apex_agents_total)) * 100",
+          "expr": "(sum(apex_active_agents) / sum(apex_agent_spawns_total)) * 100",
           "legendFormat": "Utilization",
           "range": true,
           "refId": "A"
@@ -350,7 +350,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "(sum(rate(apex_agent_executions_total{status=\"success\"}[5m])) / sum(rate(apex_agent_executions_total[5m]))) * 100",
+          "expr": "(sum(rate(apex_tasks_total{status=\"success\"}[5m])) / sum(rate(apex_tasks_total[5m]))) * 100",
           "legendFormat": "Success Rate",
           "range": true,
           "refId": "A"
@@ -418,7 +418,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum(rate(apex_agent_execution_duration_seconds_bucket[5m])) by (le)) * 1000",
+          "expr": "histogram_quantile(0.95, sum(rate(apex_task_duration_seconds_bucket[5m])) by (le)) * 1000",
           "legendFormat": "P95 Exec Time",
           "range": true,
           "refId": "A"
@@ -520,7 +520,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(apex_agents_active) by (agent_type)",
+          "expr": "sum(apex_active_agents) by (agent_type)",
           "legendFormat": "{{agent_type}}",
           "range": true,
           "refId": "A"
@@ -609,7 +609,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_agent_executions_total[5m])) by (agent_type)",
+          "expr": "sum(rate(apex_tasks_total[5m])) by (agent_type)",
           "legendFormat": "{{agent_type}}",
           "range": true,
           "refId": "A"
@@ -698,7 +698,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.50, sum(rate(apex_agent_execution_duration_seconds_bucket[5m])) by (le, agent_type)) * 1000",
+          "expr": "histogram_quantile(0.50, sum(rate(apex_task_duration_seconds_bucket[5m])) by (le, agent_type)) * 1000",
           "legendFormat": "P50 {{agent_type}}",
           "range": true,
           "refId": "A"
@@ -709,7 +709,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum(rate(apex_agent_execution_duration_seconds_bucket[5m])) by (le, agent_type)) * 1000",
+          "expr": "histogram_quantile(0.95, sum(rate(apex_task_duration_seconds_bucket[5m])) by (le, agent_type)) * 1000",
           "legendFormat": "P95 {{agent_type}}",
           "range": true,
           "refId": "B"
@@ -720,7 +720,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum(rate(apex_agent_execution_duration_seconds_bucket[5m])) by (le, agent_type)) * 1000",
+          "expr": "histogram_quantile(0.99, sum(rate(apex_task_duration_seconds_bucket[5m])) by (le, agent_type)) * 1000",
           "legendFormat": "P99 {{agent_type}}",
           "range": true,
           "refId": "C"
@@ -840,7 +840,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_agent_executions_total[5m])) by (status)",
+          "expr": "sum(rate(apex_tasks_total[5m])) by (status)",
           "legendFormat": "{{status}}",
           "range": true,
           "refId": "A"
@@ -942,7 +942,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_agent_errors_total[5m])) by (error_type)",
+          "expr": "sum(rate(apex_tasks_failed[5m])) by (error_type)",
           "legendFormat": "{{error_type}}",
           "range": true,
           "refId": "A"
@@ -1031,13 +1031,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(apex_agent_retries_total) by (agent_type)",
+          "expr": "sum(apex_tasks_total{status=\"failed\"}) by (agent_type)",
           "legendFormat": "{{agent_type}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Retries by Agent Type",
+      "title": "Failed Tasks by Agent Type",
       "type": "timeseries"
     },
     {
@@ -1103,7 +1103,7 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "ms"
         },
         "overrides": []
       },
@@ -1133,13 +1133,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(apex_agent_memory_bytes) by (agent_type)",
-          "legendFormat": "{{agent_type}}",
+          "expr": "histogram_quantile(0.95, sum(rate(apex_agent_latency_seconds_bucket[5m])) by (le, agent_type)) * 1000",
+          "legendFormat": "P95 {{agent_type}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Agent Memory Usage",
+      "title": "Agent Latency (P95)",
       "type": "timeseries"
     },
     {
@@ -1222,13 +1222,237 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(apex_agent_context_tokens) by (agent_type)",
+          "expr": "sum(apex_tokens_total) by (agent_type)",
           "legendFormat": "{{agent_type}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Agent Context Tokens",
+      "title": "Total Tokens by Agent Type",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 40 },
+      "id": 19,
+      "panels": [],
+      "title": "Token Usage & Cost per Agent",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 41 },
+      "id": 20,
+      "options": {
+        "legend": { "calcs": ["mean", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(rate(apex_tokens_input_total[5m])) by (agent_type)",
+          "legendFormat": "Input {{agent_type}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(rate(apex_tokens_output_total[5m])) by (agent_type)",
+          "legendFormat": "Output {{agent_type}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Token Usage Rate by Agent Type",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 41 },
+      "id": 21,
+      "options": {
+        "legend": { "calcs": ["mean", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(rate(apex_cost_total_microdollars[5m])) by (agent_type) / 1000000 * 3600",
+          "legendFormat": "{{agent_type}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cost Rate per Agent Type ($/hr)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 49 },
+      "id": 22,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(rate(apex_cost_total_microdollars[5m])) by (agent_type) / 1000000 / sum(rate(apex_tasks_total[5m])) by (agent_type)",
+          "legendFormat": "{{agent_type}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cost per Execution by Agent Type",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 49 },
+      "id": 23,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "(sum(rate(apex_tokens_input_total[5m])) by (agent_type) + sum(rate(apex_tokens_output_total[5m])) by (agent_type)) / sum(rate(apex_tasks_total[5m])) by (agent_type)",
+          "legendFormat": "{{agent_type}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Tokens per Execution by Agent Type",
       "type": "timeseries"
     }
   ],
@@ -1248,7 +1472,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(apex_agents_total, agent_type)",
+        "definition": "label_values(apex_agent_spawns_total, agent_type)",
         "hide": 0,
         "includeAll": true,
         "label": "Agent Type",
@@ -1256,7 +1480,7 @@
         "name": "agent_type",
         "options": [],
         "query": {
-          "query": "label_values(apex_agents_total, agent_type)",
+          "query": "label_values(apex_agent_spawns_total, agent_type)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,

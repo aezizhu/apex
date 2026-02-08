@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useStore, selectAgentList, selectTaskList, selectPendingApprovals, selectAgentsByStatus } from '../lib/store'
+import { useStore, selectAgentList, selectTaskList, selectPendingApprovals, selectAgentsByStatus, selectActiveAgents, selectRunningTasks, selectTasksByStatus, selectTasksByAgent } from '../lib/store'
 import type { Agent, Task, ApprovalRequest } from '../lib/store'
 
 const mockAgent = (overrides: Partial<Agent> = {}): Agent => ({
@@ -70,5 +70,24 @@ describe('Apex Store', () => {
     it('selectTaskList', () => { useStore.getState().setTasks([mockTask({ id: 't1' }), mockTask({ id: 't2' })]); expect(selectTaskList(useStore.getState())).toHaveLength(2) })
     it('selectPendingApprovals', () => { useStore.getState().setApprovals([mockApproval({ id: 'a1', status: 'pending' }), mockApproval({ id: 'a2', status: 'approved' })]); expect(selectPendingApprovals(useStore.getState())).toHaveLength(1) })
     it('selectAgentsByStatus', () => { useStore.getState().setAgents([mockAgent({ id: 'a1', status: 'idle' }), mockAgent({ id: 'a2', status: 'busy' }), mockAgent({ id: 'a3', status: 'busy' })]); expect(selectAgentsByStatus('busy')(useStore.getState())).toHaveLength(2) })
+    it('selectActiveAgents returns busy agents', () => {
+      useStore.getState().setAgents([mockAgent({ id: 'a1', status: 'idle' }), mockAgent({ id: 'a2', status: 'busy' }), mockAgent({ id: 'a3', status: 'busy' })])
+      expect(selectActiveAgents(useStore.getState())).toHaveLength(2)
+    })
+    it('selectRunningTasks returns running tasks', () => {
+      useStore.getState().setTasks([mockTask({ id: 't1', status: 'running' }), mockTask({ id: 't2', status: 'completed' }), mockTask({ id: 't3', status: 'running' })])
+      expect(selectRunningTasks(useStore.getState())).toHaveLength(2)
+    })
+    it('selectTasksByStatus filters by given status', () => {
+      useStore.getState().setTasks([mockTask({ id: 't1', status: 'pending' }), mockTask({ id: 't2', status: 'completed' }), mockTask({ id: 't3', status: 'failed' })])
+      expect(selectTasksByStatus('completed')(useStore.getState())).toHaveLength(1)
+      expect(selectTasksByStatus('failed')(useStore.getState())).toHaveLength(1)
+    })
+    it('selectTasksByAgent filters by agent ID', () => {
+      useStore.getState().setTasks([mockTask({ id: 't1', agentId: 'a1' }), mockTask({ id: 't2', agentId: 'a2' }), mockTask({ id: 't3', agentId: 'a1' })])
+      expect(selectTasksByAgent('a1')(useStore.getState())).toHaveLength(2)
+      expect(selectTasksByAgent('a2')(useStore.getState())).toHaveLength(1)
+      expect(selectTasksByAgent('a3')(useStore.getState())).toHaveLength(0)
+    })
   })
 })

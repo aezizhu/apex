@@ -1,4 +1,26 @@
-//! Agent definitions and management.
+//! Agent definitions, management, delegation, and inter-agent communication.
+
+pub mod delegation;
+pub mod communication;
+pub mod state;
+pub mod memory;
+
+pub use delegation::{
+    DelegationId, DelegationRequest, DelegationContext, DelegationPriority,
+    DelegationStrategy, DelegationManager, DelegationResult, DelegationStatus,
+};
+pub use communication::{
+    MessageId, MessageKind, AgentMessage, MessageBus,
+    ConversationThread, ThreadStatus, ThreadManager,
+};
+pub use state::{
+    ConversationState, ConversationMessage, MessageRole, StateCheckpoint,
+    StateStore, InMemoryStateStore, StateStoreHandle,
+};
+pub use memory::{
+    MemoryEntry, MemoryType, Importance, MemoryQuery, ScoredMemory,
+    AgentMemory, MemoryManager, MemoryStore, InMemoryMemoryStore,
+};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

@@ -218,19 +218,69 @@ export class WebSocketMock {
   }
 
   async sendAgentUpdate(agent: MockAgent) {
-    await this.sendMessage({ type: 'AgentUpdate', ...agent })
+    await this.sendMessage({
+      type: 'agent_update',
+      agent_id: agent.id,
+      name: agent.name,
+      model: agent.model,
+      status: agent.status,
+      current_load: agent.currentLoad,
+      max_load: agent.maxLoad,
+      success_rate: agent.successRate,
+      reputation_score: agent.reputationScore,
+      total_tokens: agent.totalTokens,
+      total_cost: agent.totalCost,
+      confidence: agent.confidence,
+    })
   }
 
   async sendTaskUpdate(task: MockTask) {
-    await this.sendMessage({ type: 'TaskUpdate', ...task })
+    await this.sendMessage({
+      type: 'task_update',
+      task_id: task.id,
+      dag_id: task.dagId,
+      name: task.name,
+      status: task.status,
+      agent_id: task.agentId,
+      tokens_used: task.tokensUsed,
+      cost_dollars: task.costDollars,
+      created_at: task.createdAt,
+      started_at: task.startedAt,
+      completed_at: task.completedAt,
+    })
   }
 
   async sendMetricsUpdate(metrics: MockMetrics) {
-    await this.sendMessage({ type: 'MetricsUpdate', ...metrics })
+    await this.sendMessage({
+      type: 'metrics',
+      agents: {
+        total: metrics.totalAgents,
+        active: metrics.activeAgents,
+        avg_success_rate: metrics.successRate,
+      },
+      tasks: {
+        running: metrics.runningTasks,
+        completed_last_hour: metrics.completedTasks,
+        failed_last_hour: metrics.failedTasks,
+        avg_duration_ms: metrics.avgLatencyMs,
+      },
+      resources: {
+        total_tokens_used: metrics.totalTokens,
+        total_cost_dollars: metrics.totalCost,
+      },
+    })
   }
 
   async sendApprovalRequest(approval: MockApproval) {
-    await this.sendMessage({ type: 'ApprovalRequest', ...approval })
+    await this.sendMessage({
+      type: 'approval_required',
+      request_id: approval.id,
+      task_id: approval.taskId,
+      agent_id: approval.agentId,
+      approval_type: approval.actionType,
+      details: approval.actionData,
+      created_at: approval.createdAt,
+    })
   }
 }
 

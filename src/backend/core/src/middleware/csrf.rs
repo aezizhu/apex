@@ -7,16 +7,17 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{sync::Arc, task::{Context, Poll}, time::{Duration, Instant}};
 use tower::{Layer, Service};
-use tracing::{debug, warn};
+use tracing::debug;
 use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub struct CsrfConfig { pub secret: String, pub token_ttl: Duration, pub exempt_paths: Vec<String>, pub protected_methods: Vec<Method>, pub token_header: String }
 impl Default for CsrfConfig { fn default() -> Self { Self { secret: Uuid::new_v4().to_string(), token_ttl: Duration::from_secs(3600), exempt_paths: vec!["/api/".into(),"/health".into(),"/ready".into(),"/metrics".into(),"/ws".into()], protected_methods: vec![Method::POST,Method::PUT,Method::PATCH,Method::DELETE], token_header: "x-csrf-token".into() } } }
 impl CsrfConfig { fn is_exempt(&self, p: &str) -> bool { self.exempt_paths.iter().any(|e| p.starts_with(e)) } fn is_protected(&self, m: &Method) -> bool { self.protected_methods.contains(m) } }
 #[derive(Debug, Clone)] struct StoredToken { expires_at: Instant }
-#[derive(Debug, Clone)] struct TokenStore { tokens: Arc<DashMap<String, StoredToken>>, ttl: Duration }
+#[derive(Debug, Clone)] struct TokenStore { tokens: Arc<DashMap<String, StoredToken>>, #[allow(dead_code)] ttl: Duration }
 impl TokenStore {
     fn new(ttl: Duration) -> Self { Self { tokens: Arc::new(DashMap::new()), ttl } }
+    #[allow(dead_code)]
     fn generate(&self, secret: &str) -> String { let n = Uuid::new_v4().to_string(); let mut h = Sha256::new(); h.update(secret.as_bytes()); h.update(n.as_bytes()); let t = format!("{}:{}", n, hex::encode(h.finalize())); self.tokens.insert(t.clone(), StoredToken { expires_at: Instant::now() + self.ttl }); t }
     fn validate(&self, t: &str) -> bool { if let Some(e) = self.tokens.get(t) { if e.expires_at > Instant::now() { return true; } drop(e); self.tokens.remove(t); } false }
     fn cleanup(&self) { let now = Instant::now(); self.tokens.retain(|_, v| v.expires_at > now); }
