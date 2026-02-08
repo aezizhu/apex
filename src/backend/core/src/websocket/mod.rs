@@ -9,12 +9,12 @@
 //! - Efficient broadcasting to many clients
 //! - Graceful disconnection and reconnection support
 
-mod handler;
-mod message;
-mod room;
+pub mod handler;
+pub mod message;
+pub mod room;
 mod broadcast;
-mod auth;
-mod session;
+pub mod auth;
+pub mod session;
 
 pub use handler::{
     WebSocketHandler,

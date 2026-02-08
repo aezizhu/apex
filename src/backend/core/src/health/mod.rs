@@ -5,7 +5,7 @@
 
 mod check;
 mod checker;
-mod routes;
+pub mod routes;
 
 pub use check::*;
 pub use checker::*;

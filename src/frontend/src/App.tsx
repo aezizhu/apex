@@ -9,6 +9,7 @@ import Tasks from './pages/Tasks'
 import Approvals from './pages/Approvals'
 import Settings from './pages/Settings'
 import AgentSightPage from './pages/AgentSight'
+import Workflows from './pages/Workflows'
 
 function App() {
   // Connect to WebSocket for real-time updates
@@ -25,6 +26,7 @@ function App() {
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/approvals" element={<Approvals />} />
           <Route path="/agent-sight" element={<AgentSightPage />} />
+          <Route path="/workflows" element={<Workflows />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </Layout>

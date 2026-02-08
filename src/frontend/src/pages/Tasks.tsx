@@ -11,6 +11,8 @@ import {
   ChevronDown,
   List,
   GanttChart,
+  X,
+  Loader2,
 } from 'lucide-react'
 import { useStore, selectTaskList, type Task } from '../lib/store'
 import { cn, formatCost, formatTokens, formatDate, formatDuration } from '../lib/utils'
@@ -27,6 +29,13 @@ export default function Tasks() {
   const [statusFilter, setStatusFilter] = useState<Task['status'] | 'all'>('all')
   const [expandedTask, setExpandedTask] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
+  const [showCreate, setShowCreate] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [newTask, setNewTask] = useState({
+    name: '',
+    prompt: '',
+    priority: 5,
+  })
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -63,6 +72,29 @@ export default function Tasks() {
     }
   }, [fetchTasks])
 
+  const handleCreate = useCallback(async () => {
+    if (!newTask.name.trim() || !newTask.prompt.trim()) {
+      toast.error('Name and prompt are required')
+      return
+    }
+    setCreating(true)
+    try {
+      await taskApi.create({
+        name: newTask.name.trim(),
+        prompt: newTask.prompt.trim(),
+        priority: newTask.priority,
+      })
+      toast.success(`Task "${newTask.name}" submitted`)
+      setShowCreate(false)
+      setNewTask({ name: '', prompt: '', priority: 5 })
+      fetchTasks()
+    } catch {
+      toast.error('Failed to submit task')
+    } finally {
+      setCreating(false)
+    }
+  }, [newTask, fetchTasks])
+
   const filteredTasks = tasks
     .filter((task) => {
       const matchesSearch = task.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -97,7 +129,10 @@ export default function Tasks() {
             Monitor and manage task execution
           </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-apex-accent-primary hover:bg-blue-600 text-white rounded-lg transition-colors">
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-apex-accent-primary hover:bg-blue-600 text-white rounded-lg transition-colors"
+        >
           <Plus size={18} />
           Submit Task
         </button>
@@ -342,6 +377,94 @@ export default function Tasks() {
           )}
         </div>
       )}
+
+      {/* Create Task Modal */}
+      <AnimatePresence>
+        {showCreate && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowCreate(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg p-6 bg-apex-bg-secondary border border-apex-border-subtle rounded-xl shadow-xl space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Submit Task</h2>
+                <button
+                  onClick={() => setShowCreate(false)}
+                  className="p-1 hover:bg-apex-bg-tertiary rounded-md transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Name</label>
+                <input
+                  type="text"
+                  value={newTask.name}
+                  onChange={(e) => setNewTask({ ...newTask, name: e.target.value })}
+                  placeholder="e.g. Analyze quarterly report"
+                  className="w-full px-4 py-2 bg-apex-bg-primary border border-apex-border-subtle rounded-lg focus:outline-none focus:border-apex-accent-primary"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Prompt</label>
+                <textarea
+                  value={newTask.prompt}
+                  onChange={(e) => setNewTask({ ...newTask, prompt: e.target.value })}
+                  placeholder="Describe what the agent should do..."
+                  rows={4}
+                  className="w-full px-4 py-2 bg-apex-bg-primary border border-apex-border-subtle rounded-lg focus:outline-none focus:border-apex-accent-primary resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Priority (1-10)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={newTask.priority}
+                  onChange={(e) => setNewTask({ ...newTask, priority: parseInt(e.target.value) || 5 })}
+                  className="w-32 px-4 py-2 bg-apex-bg-primary border border-apex-border-subtle rounded-lg focus:outline-none focus:border-apex-accent-primary"
+                />
+                <p className="text-xs text-apex-text-tertiary mt-1">
+                  Higher priority tasks are assigned to agents first
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowCreate(false)}
+                  className="px-4 py-2 text-sm text-apex-text-secondary hover:text-apex-text-primary transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreate}
+                  disabled={creating || !newTask.name.trim() || !newTask.prompt.trim()}
+                  className="flex items-center gap-2 px-4 py-2 bg-apex-accent-primary hover:bg-blue-600 text-white rounded-lg transition-colors text-sm disabled:opacity-50"
+                >
+                  {creating && <Loader2 size={14} className="animate-spin" />}
+                  Submit
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

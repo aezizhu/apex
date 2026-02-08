@@ -660,9 +660,9 @@ mod tests {
 
     #[test]
     fn test_health_status_http_codes() {
-        assert_eq!(HealthStatus::Healthy.http_status_code(), 200);
-        assert_eq!(HealthStatus::Degraded.http_status_code(), 200);
-        assert_eq!(HealthStatus::Unhealthy.http_status_code(), 503);
+        assert_eq!(HealthStatus::Healthy.to_http_status(), 200);
+        assert_eq!(HealthStatus::Degraded.to_http_status(), 200);
+        assert_eq!(HealthStatus::Unhealthy.to_http_status(), 503);
     }
 
     #[test]
@@ -729,14 +729,14 @@ mod tests {
     #[test]
     fn test_component_health_from_result_ok() {
         let result: std::result::Result<(), String> = Ok(());
-        let health = ComponentHealth::from_result("db", result);
+        let health = ComponentHealth::from_result("db", result, std::time::Duration::from_millis(1));
         assert!(health.is_healthy());
     }
 
     #[test]
     fn test_component_health_from_result_err() {
         let result: std::result::Result<(), String> = Err("conn failed".into());
-        let health = ComponentHealth::from_result("db", result);
+        let health = ComponentHealth::from_result("db", result, std::time::Duration::from_millis(1));
         assert_eq!(health.status, HealthStatus::Unhealthy);
     }
 
@@ -770,7 +770,7 @@ mod tests {
     #[test]
     fn test_health_report_with_uptime() {
         let report = HealthReport::new().with_uptime(std::time::Duration::from_secs(3600));
-        assert_eq!(report.uptime_seconds, Some(3600));
+        assert_eq!(report.uptime_secs, Some(3600));
     }
 
     #[test]
@@ -818,7 +818,7 @@ mod tests {
 
     #[test]
     fn test_liveness_response_dead() {
-        let resp = LivenessResponse::dead();
+        let resp = LivenessResponse::new(false);
         assert!(!resp.alive);
     }
 

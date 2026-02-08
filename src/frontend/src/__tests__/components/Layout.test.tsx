@@ -117,7 +117,7 @@ describe('Layout', () => {
 
       // Should have SVG icons for each nav item
       const navIcons = container.querySelectorAll('nav svg')
-      expect(navIcons.length).toBe(5) // 5 nav items
+      expect(navIcons.length).toBe(7) // 7 nav items (Dashboard, Agents, Agent Sight, Tasks, Approvals, Workflows, Settings)
     })
   })
 

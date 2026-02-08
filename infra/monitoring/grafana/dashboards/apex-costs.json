@@ -94,7 +94,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(apex_model_cost_dollars_total[24h]))",
+          "expr": "sum(increase(apex_cost_total_microdollars[24h])) / 1000000",
           "legendFormat": "Daily Cost",
           "range": true,
           "refId": "A"
@@ -162,7 +162,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(apex_model_cost_dollars_total[7d]))",
+          "expr": "sum(increase(apex_cost_total_microdollars[7d])) / 1000000",
           "legendFormat": "Weekly Cost",
           "range": true,
           "refId": "A"
@@ -230,7 +230,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(apex_model_cost_dollars_total[30d]))",
+          "expr": "sum(increase(apex_cost_total_microdollars[30d])) / 1000000",
           "legendFormat": "Monthly Cost",
           "range": true,
           "refId": "A"
@@ -290,7 +290,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_model_cost_dollars_total[5m])) * 3600",
+          "expr": "sum(rate(apex_cost_total_microdollars[5m])) / 1000000 * 3600",
           "legendFormat": "Hourly Rate",
           "range": true,
           "refId": "A"
@@ -392,7 +392,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_model_cost_dollars_total[5m])) by (model) * 3600",
+          "expr": "sum(rate(apex_cost_total_microdollars[5m])) by (model) / 1000000 * 3600",
           "legendFormat": "{{model}}",
           "range": true,
           "refId": "A"
@@ -457,7 +457,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(apex_model_cost_dollars_total[24h])) by (model)",
+          "expr": "sum(increase(apex_cost_total_microdollars[24h])) by (model) / 1000000",
           "legendFormat": "{{model}}",
           "range": true,
           "refId": "A"
@@ -546,7 +546,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_model_requests_total[5m])) by (model)",
+          "expr": "sum(rate(apex_tasks_total[5m])) by (model)",
           "legendFormat": "{{model}}",
           "range": true,
           "refId": "A"
@@ -635,7 +635,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_model_cost_dollars_total[5m])) by (model) / sum(rate(apex_model_requests_total[5m])) by (model)",
+          "expr": "sum(rate(apex_cost_total_microdollars[5m])) by (model) / 1000000 / sum(rate(apex_tasks_total[5m])) by (model)",
           "legendFormat": "{{model}}",
           "range": true,
           "refId": "A"
@@ -737,7 +737,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_model_input_tokens_total[5m])) by (model)",
+          "expr": "sum(rate(apex_tokens_input_total[5m])) by (model)",
           "legendFormat": "Input {{model}}",
           "range": true,
           "refId": "A"
@@ -748,7 +748,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_model_output_tokens_total[5m])) by (model)",
+          "expr": "sum(rate(apex_tokens_output_total[5m])) by (model)",
           "legendFormat": "Output {{model}}",
           "range": true,
           "refId": "B"
@@ -837,7 +837,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_model_input_tokens_total[5m])) by (model) / sum(rate(apex_model_requests_total[5m])) by (model)",
+          "expr": "sum(rate(apex_tokens_input_total[5m])) by (model) / sum(rate(apex_tasks_total[5m])) by (model)",
           "legendFormat": "Input {{model}}",
           "range": true,
           "refId": "A"
@@ -848,7 +848,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_model_output_tokens_total[5m])) by (model) / sum(rate(apex_model_requests_total[5m])) by (model)",
+          "expr": "sum(rate(apex_tokens_output_total[5m])) by (model) / sum(rate(apex_tasks_total[5m])) by (model)",
           "legendFormat": "Output {{model}}",
           "range": true,
           "refId": "B"
@@ -908,7 +908,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(apex_model_input_tokens_total[24h]))",
+          "expr": "sum(increase(apex_tokens_input_total[24h]))",
           "legendFormat": "Input Tokens",
           "range": true,
           "refId": "A"
@@ -968,7 +968,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(apex_model_output_tokens_total[24h]))",
+          "expr": "sum(increase(apex_tokens_output_total[24h]))",
           "legendFormat": "Output Tokens",
           "range": true,
           "refId": "A"
@@ -1028,7 +1028,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(apex_model_requests_total[24h]))",
+          "expr": "sum(increase(apex_tasks_total[24h]))",
           "legendFormat": "Requests",
           "range": true,
           "refId": "A"
@@ -1088,7 +1088,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "(sum(increase(apex_model_input_tokens_total[24h])) + sum(increase(apex_model_output_tokens_total[24h]))) / sum(increase(apex_model_requests_total[24h]))",
+          "expr": "(sum(increase(apex_tokens_input_total[24h])) + sum(increase(apex_tokens_output_total[24h]))) / sum(increase(apex_tasks_total[24h]))",
           "legendFormat": "Avg Tokens",
           "range": true,
           "refId": "A"
@@ -1190,7 +1190,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_model_cost_dollars_total[5m])) by (agent_type) * 3600",
+          "expr": "sum(rate(apex_cost_total_microdollars[5m])) by (agent_type) / 1000000 * 3600",
           "legendFormat": "{{agent_type}}",
           "range": true,
           "refId": "A"
@@ -1279,7 +1279,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_model_cost_dollars_total[5m])) by (task_type) * 3600",
+          "expr": "sum(rate(apex_cost_total_microdollars[5m])) by (task_type) / 1000000 * 3600",
           "legendFormat": "{{task_type}}",
           "range": true,
           "refId": "A"
@@ -1368,7 +1368,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_model_cost_dollars_total[5m])) by (agent_type) / sum(rate(apex_agent_executions_total[5m])) by (agent_type)",
+          "expr": "sum(rate(apex_cost_total_microdollars[5m])) by (agent_type) / 1000000 / sum(rate(apex_tasks_total[5m])) by (agent_type)",
           "legendFormat": "{{agent_type}}",
           "range": true,
           "refId": "A"
@@ -1394,7 +1394,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(apex_model_cost_dollars_total, model)",
+        "definition": "label_values(apex_cost_total_microdollars, model)",
         "hide": 0,
         "includeAll": true,
         "label": "Model",
@@ -1402,7 +1402,7 @@
         "name": "model",
         "options": [],
         "query": {
-          "query": "label_values(apex_model_cost_dollars_total, model)",
+          "query": "label_values(apex_cost_total_microdollars, model)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,

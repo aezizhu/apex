@@ -32,9 +32,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use manifest::PluginManifest;
-use registry::PluginRegistry;
-use sandbox::SandboxContext;
+// Re-exports below bring these into scope publicly.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Plugin Trait

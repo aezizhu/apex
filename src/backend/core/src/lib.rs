@@ -39,6 +39,7 @@ pub mod health;
 pub mod jobs;
 pub mod events;
 pub mod plugins;
+pub mod approvals;
 
 pub use error::{ApexError, Result, ErrorCode, ErrorContext, ErrorDetails, ErrorSeverity, DAGError, OrchestratorError, AgentError, ContractError};
 
@@ -47,7 +48,21 @@ pub mod prelude {
     pub use crate::orchestrator::SwarmOrchestrator;
     pub use crate::dag::{TaskDAG, Task, TaskId, TaskStatus};
     pub use crate::contracts::{AgentContract, ResourceLimits};
-    pub use crate::agents::{Agent, AgentId, AgentStatus};
+    pub use crate::agents::{
+        Agent, AgentId, AgentStatus,
+        DelegationId, DelegationRequest, DelegationContext, DelegationPriority,
+        DelegationStrategy, DelegationManager, DelegationResult, DelegationStatus,
+        MessageId, MessageKind, AgentMessage, MessageBus,
+        ConversationThread, ThreadStatus, ThreadManager,
+        ConversationState, ConversationMessage, MessageRole, StateCheckpoint,
+        StateStore, InMemoryStateStore, StateStoreHandle,
+        MemoryEntry, MemoryType, Importance, MemoryQuery, ScoredMemory,
+        AgentMemory, MemoryManager, MemoryStore, InMemoryMemoryStore,
+    };
+    pub use crate::approvals::{
+        ApprovalRequestId, ApprovalDecisionId,
+        ApprovalRequest as ApprovalRequestModel, ApprovalDecision, ApprovalStatus, ApprovalType,
+    };
     pub use crate::routing::ModelRouter;
     pub use crate::error::{ApexError, Result, ErrorCode, ErrorContext, ErrorDetails, ErrorSeverity, DAGError, OrchestratorError, AgentError, ContractError};
     pub use crate::websocket::{

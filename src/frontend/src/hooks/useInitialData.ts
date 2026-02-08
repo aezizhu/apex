@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useStore } from '../lib/store'
-import { agentApi, taskApi, metricsApi, approvalApi } from '../lib/api'
+import { agentApi, taskApi, metricsApi, approvalApi, settingsApi } from '../lib/api'
 import type { Agent, Task } from '../lib/store'
 
 /**
@@ -8,7 +8,7 @@ import type { Agent, Task } from '../lib/store'
  * Also sets up periodic polling for metrics (every 30s).
  */
 export function useInitialData() {
-  const { setAgents, setTasks, setMetrics, setApprovals } = useStore()
+  const { setAgents, setTasks, setMetrics, setApprovals, setSettings, setApiKeys } = useStore()
   const hasFetched = useRef(false)
 
   useEffect(() => {
@@ -83,10 +83,38 @@ export function useInitialData() {
       } catch (err) {
         console.warn('[Init] Failed to fetch approvals:', err)
       }
+
+      // Fetch settings (for store cache)
+      try {
+        const settingsResponse = await settingsApi.get()
+        if (settingsResponse.data) {
+          const s = settingsResponse.data
+          setSettings({
+            maxConcurrentAgents: s.maxConcurrentTasks,
+            defaultModel: s.defaultAgentModel,
+            autoRetryEnabled: s.autoRetryEnabled,
+            maxRetries: s.maxRetries,
+            logLevel: s.logLevel,
+            costThreshold: s.approvalThreshold,
+          })
+        }
+      } catch {
+        // Settings endpoint may not exist yet
+      }
+
+      // Fetch API keys (for store cache)
+      try {
+        const keysResponse = await settingsApi.getApiKeys()
+        if (keysResponse.data) {
+          setApiKeys(keysResponse.data)
+        }
+      } catch {
+        // API keys endpoint may not exist yet
+      }
     }
 
     fetchInitialData()
-  }, [setAgents, setTasks, setMetrics, setApprovals])
+  }, [setAgents, setTasks, setMetrics, setApprovals, setSettings, setApiKeys])
 
   // Periodically refresh metrics every 30s
   useEffect(() => {

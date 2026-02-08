@@ -8,6 +8,8 @@ import {
   MoreVertical,
   Play,
   Pause,
+  X,
+  Loader2,
 } from 'lucide-react'
 import { useStore, selectAgentList, type Agent } from '../lib/store'
 import { cn, formatCost } from '../lib/utils'
@@ -25,6 +27,13 @@ export default function Agents() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<Agent['status'] | 'all'>('all')
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
+  const [showRegister, setShowRegister] = useState(false)
+  const [registering, setRegistering] = useState(false)
+  const [newAgent, setNewAgent] = useState({
+    name: '',
+    model: 'gpt-4o-mini',
+    maxLoad: 10,
+  })
 
   // Fetch agents on mount
   const fetchAgents = useCallback(async () => {
@@ -73,6 +82,31 @@ export default function Agents() {
     }
   }, [fetchAgents])
 
+  const handleRegister = useCallback(async () => {
+    if (!newAgent.name.trim()) {
+      toast.error('Agent name is required')
+      return
+    }
+    setRegistering(true)
+    try {
+      await agentApi.create({
+        config: {
+          name: newAgent.name.trim(),
+          model: newAgent.model,
+          maxLoad: newAgent.maxLoad,
+        },
+      })
+      toast.success(`Agent "${newAgent.name}" registered`)
+      setShowRegister(false)
+      setNewAgent({ name: '', model: 'gpt-4o-mini', maxLoad: 10 })
+      fetchAgents()
+    } catch {
+      toast.error('Failed to register agent')
+    } finally {
+      setRegistering(false)
+    }
+  }, [newAgent, fetchAgents])
+
   const filteredAgents = agents.filter((agent) => {
     const matchesSearch = agent.name.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesStatus = statusFilter === 'all' || agent.status === statusFilter
@@ -101,7 +135,10 @@ export default function Agents() {
             Manage and monitor your agent swarm
           </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-apex-accent-primary hover:bg-blue-600 text-white rounded-lg transition-colors">
+        <button
+          onClick={() => setShowRegister(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-apex-accent-primary hover:bg-blue-600 text-white rounded-lg transition-colors"
+        >
           <Plus size={18} />
           Register Agent
         </button>
@@ -323,15 +360,106 @@ export default function Agents() {
         </div>
       )}
 
+      {/* Register Agent Modal */}
+      <AnimatePresence>
+        {showRegister && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowRegister(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md p-6 bg-apex-bg-secondary border border-apex-border-subtle rounded-xl shadow-xl space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Register Agent</h2>
+                <button
+                  onClick={() => setShowRegister(false)}
+                  className="p-1 hover:bg-apex-bg-tertiary rounded-md transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Name</label>
+                <input
+                  type="text"
+                  value={newAgent.name}
+                  onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })}
+                  placeholder="e.g. Research Agent"
+                  className="w-full px-4 py-2 bg-apex-bg-primary border border-apex-border-subtle rounded-lg focus:outline-none focus:border-apex-accent-primary"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Model</label>
+                <select
+                  value={newAgent.model}
+                  onChange={(e) => setNewAgent({ ...newAgent, model: e.target.value })}
+                  className="w-full px-4 py-2 bg-apex-bg-primary border border-apex-border-subtle rounded-lg focus:outline-none focus:border-apex-accent-primary"
+                >
+                  <option value="gpt-4o-mini">GPT-4o Mini</option>
+                  <option value="gpt-4o">GPT-4o</option>
+                  <option value="claude-3.5-haiku">Claude 3.5 Haiku</option>
+                  <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Max Concurrent Load</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={newAgent.maxLoad}
+                  onChange={(e) => setNewAgent({ ...newAgent, maxLoad: parseInt(e.target.value) || 1 })}
+                  className="w-full px-4 py-2 bg-apex-bg-primary border border-apex-border-subtle rounded-lg focus:outline-none focus:border-apex-accent-primary"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowRegister(false)}
+                  className="px-4 py-2 text-sm text-apex-text-secondary hover:text-apex-text-primary transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRegister}
+                  disabled={registering || !newAgent.name.trim()}
+                  className="flex items-center gap-2 px-4 py-2 bg-apex-accent-primary hover:bg-blue-600 text-white rounded-lg transition-colors text-sm disabled:opacity-50"
+                >
+                  {registering && <Loader2 size={14} className="animate-spin" />}
+                  Register
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Intervention Panel */}
       <AnimatePresence>
         {selectedAgent && (
           <InterventionPanel
             agent={selectedAgent}
             onClose={() => setSelectedAgent(null)}
-            onSendMessage={(agentId, message) => {
-              console.log(`[Nudge] Agent ${agentId}: ${message}`)
-              toast.success('Nudge sent')
+            onSendMessage={async (agentId, message) => {
+              try {
+                await agentApi.update(agentId, { systemPrompt: message })
+                toast.success('Nudge sent — agent prompt updated')
+                fetchAgents()
+              } catch {
+                toast.error('Failed to send nudge')
+              }
             }}
             onPause={handlePause}
             onResume={handleResume}
@@ -345,9 +473,14 @@ export default function Agents() {
                 toast.error('Failed to patch agent state')
               }
             }}
-            onTakeover={(agentId) => {
-              console.log(`[Takeover] Agent ${agentId}`)
-              toast.success('Takeover initiated')
+            onTakeover={async (agentId) => {
+              try {
+                await agentApi.pause(agentId)
+                toast.success('Agent paused for takeover — manual control active')
+                fetchAgents()
+              } catch {
+                toast.error('Failed to initiate takeover')
+              }
             }}
             onKill={handleKill}
           />

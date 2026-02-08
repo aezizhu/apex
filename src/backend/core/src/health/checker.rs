@@ -705,12 +705,12 @@ impl DiskSpaceHealthChecker {
         {
             use std::ffi::CString;
             let c_path = CString::new(self.path.as_str())
-                .map_err(|e| format\!("Invalid path: {}", e))?;
+                .map_err(|e| format!("Invalid path: {}", e))?;
 
             unsafe {
                 let mut stat: libc::statvfs = std::mem::zeroed();
-                if libc::statvfs(c_path.as_ptr(), &mut stat) \!= 0 {
-                    return Err(format\!(
+                if libc::statvfs(c_path.as_ptr(), &mut stat) != 0 {
+                    return Err(format!(
                         "statvfs failed for {}: {}",
                         self.path,
                         std::io::Error::last_os_error()
@@ -770,7 +770,7 @@ impl HealthChecker for DiskSpaceHealthChecker {
                     HealthStatus::Healthy
                 };
 
-                let message = format\!(
+                let message = format!(
                     "Disk usage: {:.1}% ({} / {} available)",
                     info.usage_pct,
                     format_bytes(info.used_bytes),
@@ -787,7 +787,7 @@ impl HealthChecker for DiskSpaceHealthChecker {
                     .with_metadata("usage_pct", info.usage_pct)
             }
             Err(e) => {
-                warn\!(error = %e, path = %self.path, "Disk space check failed");
+                warn!(error = %e, path = %self.path, "Disk space check failed");
                 ComponentHealth::unhealthy(self.name())
                     .with_error(e)
                     .with_latency(start.elapsed())
@@ -804,15 +804,15 @@ fn format_bytes(bytes: u64) -> String {
     const TB: u64 = GB * 1024;
 
     if bytes >= TB {
-        format\!("{:.1} TB", bytes as f64 / TB as f64)
+        format!("{:.1} TB", bytes as f64 / TB as f64)
     } else if bytes >= GB {
-        format\!("{:.1} GB", bytes as f64 / GB as f64)
+        format!("{:.1} GB", bytes as f64 / GB as f64)
     } else if bytes >= MB {
-        format\!("{:.1} MB", bytes as f64 / MB as f64)
+        format!("{:.1} MB", bytes as f64 / MB as f64)
     } else if bytes >= KB {
-        format\!("{:.1} KB", bytes as f64 / KB as f64)
+        format!("{:.1} KB", bytes as f64 / KB as f64)
     } else {
-        format\!("{} B", bytes)
+        format!("{} B", bytes)
     }
 }
 
@@ -855,8 +855,8 @@ impl MemoryHealthChecker {
         {
             unsafe {
                 let mut usage: libc::rusage = std::mem::zeroed();
-                if libc::getrusage(libc::RUSAGE_SELF, &mut usage) \!= 0 {
-                    return Err(format\!(
+                if libc::getrusage(libc::RUSAGE_SELF, &mut usage) != 0 {
+                    return Err(format!(
                         "getrusage failed: {}",
                         std::io::Error::last_os_error()
                     ));
@@ -892,7 +892,7 @@ impl MemoryHealthChecker {
                     &mut len,
                     std::ptr::null_mut(),
                     0,
-                ) \!= 0
+                ) != 0
                 {
                     return Err("sysctl HW_MEMSIZE failed".to_string());
                 }
@@ -904,14 +904,14 @@ impl MemoryHealthChecker {
         {
             use std::fs;
             let meminfo = fs::read_to_string("/proc/meminfo")
-                .map_err(|e| format\!("Failed to read /proc/meminfo: {}", e))?;
+                .map_err(|e| format!("Failed to read /proc/meminfo: {}", e))?;
             for line in meminfo.lines() {
                 if line.starts_with("MemTotal:") {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() >= 2 {
                         let kb: u64 = parts[1]
                             .parse()
-                            .map_err(|e| format\!("Failed to parse MemTotal: {}", e))?;
+                            .map_err(|e| format!("Failed to parse MemTotal: {}", e))?;
                         return Ok(kb * 1024);
                     }
                 }
@@ -971,7 +971,7 @@ impl HealthChecker for MemoryHealthChecker {
             if usage_pct >= self.critical_threshold_pct {
                 health = health
                     .with_status(HealthStatus::Unhealthy)
-                    .with_message(format\!(
+                    .with_message(format!(
                         "Process memory usage critical: {:.1}% ({} / {})",
                         usage_pct,
                         format_bytes(process_mem.rss_bytes),
@@ -980,14 +980,14 @@ impl HealthChecker for MemoryHealthChecker {
             } else if usage_pct >= self.warning_threshold_pct {
                 health = health
                     .with_status(HealthStatus::Degraded)
-                    .with_message(format\!(
+                    .with_message(format!(
                         "Process memory usage high: {:.1}% ({} / {})",
                         usage_pct,
                         format_bytes(process_mem.rss_bytes),
                         format_bytes(total_memory)
                     ));
             } else {
-                health = health.with_message(format\!(
+                health = health.with_message(format!(
                     "Process memory: {} ({:.1}% of {})",
                     format_bytes(process_mem.rss_bytes),
                     usage_pct,
@@ -995,7 +995,7 @@ impl HealthChecker for MemoryHealthChecker {
                 ));
             }
         } else {
-            health = health.with_message(format\!(
+            health = health.with_message(format!(
                 "Process RSS: {}",
                 format_bytes(process_mem.rss_bytes)
             ));
@@ -1236,8 +1236,8 @@ mod tests {
     #[test]
     fn test_health_check_config_thorough() {
         let config = HealthCheckConfig::thorough();
-        assert_eq!(config.timeout, Duration::from_secs(30));
-        assert!(config.include_details);
+        assert_eq!(config.timeout, Duration::from_secs(10));
+        assert!(config.detailed);
     }
 
     #[test]
@@ -1363,8 +1363,8 @@ mod tests {
             avg_exec_time_us: 0,
             uptime_secs: 100,
         });
-        // record_heartbeat should not panic
-        checker.record_heartbeat();
+        // heartbeat should not panic
+        checker.heartbeat().await;
         let health = checker.check().await;
         assert!(health.is_healthy());
     }

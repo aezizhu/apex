@@ -5,7 +5,7 @@
 //! uninstall) of every registered plugin.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -210,32 +210,38 @@ impl PluginRegistry {
     /// Install a plugin (transition from Discovered -> Installed).
     pub async fn install(&self, name: &str) -> Result<RegisteredPlugin, RegistryError> {
         let mut inner = self.inner.write().await;
-        let plugin = inner
-            .plugins
-            .get_mut(name)
-            .ok_or_else(|| RegistryError::PluginNotFound(name.to_string()))?;
 
-        if plugin.state != PluginState::Discovered {
-            return Err(RegistryError::InvalidStateTransition {
-                name: name.to_string(),
-                from: plugin.state.clone(),
-                to: PluginState::Installed,
-            });
-        }
+        // Check state first via immutable borrow.
+        {
+            let plugin = inner
+                .plugins
+                .get(name)
+                .ok_or_else(|| RegistryError::PluginNotFound(name.to_string()))?;
 
-        // Check dependencies are satisfied.
-        for dep in &plugin.manifest.dependencies {
-            if dep.optional {
-                continue;
-            }
-            if !inner.plugins.contains_key(&dep.name) {
-                return Err(RegistryError::DependencyNotSatisfied {
-                    plugin: name.to_string(),
-                    dependency: dep.name.clone(),
+            if plugin.state != PluginState::Discovered {
+                return Err(RegistryError::InvalidStateTransition {
+                    name: name.to_string(),
+                    from: plugin.state.clone(),
+                    to: PluginState::Installed,
                 });
             }
+
+            // Check dependencies are satisfied.
+            for dep in &plugin.manifest.dependencies {
+                if dep.optional {
+                    continue;
+                }
+                if !inner.plugins.contains_key(&dep.name) {
+                    return Err(RegistryError::DependencyNotSatisfied {
+                        plugin: name.to_string(),
+                        dependency: dep.name.clone(),
+                    });
+                }
+            }
         }
 
+        // Now mutate.
+        let plugin = inner.plugins.get_mut(name).unwrap();
         plugin.state = PluginState::Installed;
         plugin.updated_at = Utc::now();
         info!(plugin = name, "Plugin installed");
@@ -337,6 +343,7 @@ impl PluginRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use tempfile::TempDir;
     use std::fs;
 

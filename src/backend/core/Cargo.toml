@@ -67,6 +67,7 @@ parking_lot = "0.12"
 dashmap = "5.5"
 petgraph = "0.6"  # For DAG operations
 regex = "1.10"    # For sensitive data redaction patterns
+rand = "0.8"
 base64 = "0.22"   # For cursor encoding
 libc = "0.2"       # For system health checks (disk, memory)
 

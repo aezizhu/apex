@@ -8,10 +8,10 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::api::{ApiResponse, AppState};
-use crate::plugins::{PluginRegistry, PluginState, RegisteredPlugin};
+use crate::plugins::{PluginState, RegisteredPlugin};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DTOs

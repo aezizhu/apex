@@ -194,24 +194,35 @@ export interface ApiError {
 // WebSocket Types
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export type WsMessageType =
-  | 'Subscribe'
-  | 'Unsubscribe'
-  | 'Ping'
-  | 'AgentUpdate'
-  | 'TaskUpdate'
-  | 'MetricsUpdate'
-  | 'ApprovalRequest'
-  | 'Error'
+export type WsServerMessageType =
+  | 'connected'
+  | 'session_restored'
+  | 'subscribed'
+  | 'heartbeat'
+  | 'agent_update'
+  | 'task_update'
+  | 'metrics'
+  | 'approval_required'
+  | 'pong'
+  | 'error'
+
+export type WsClientMessageType =
+  | 'subscribe'
+  | 'unsubscribe'
+  | 'ping'
+  | 'session_restore'
 
 export interface WsMessage {
-  type: WsMessageType
+  type: string
   [key: string]: unknown
 }
 
 export interface WsSubscribeMessage {
-  type: 'Subscribe' | 'Unsubscribe'
-  resource: 'agents' | 'tasks' | 'metrics' | 'approvals'
+  type: 'subscribe' | 'unsubscribe'
+  target: {
+    resource: 'all_agents' | 'all_tasks' | 'metrics' | 'approvals'
+    interval_secs?: number
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -225,6 +236,18 @@ export interface SystemSettings {
   autoRetryEnabled: boolean
   maxRetries: number
   logLevel: 'debug' | 'info' | 'warn' | 'error'
+}
+
+export interface ApiKeySummary {
+  id: string
+  provider: string
+  maskedKey: string
+  createdAt: string
+}
+
+export interface CreateApiKeyRequest {
+  provider: string
+  key: string
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

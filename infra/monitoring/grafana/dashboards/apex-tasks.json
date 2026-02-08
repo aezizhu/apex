@@ -94,7 +94,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(apex_task_queue_depth)",
+          "expr": "sum(apex_queue_depth)",
           "legendFormat": "Queue Depth",
           "range": true,
           "refId": "A"
@@ -154,13 +154,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(apex_tasks_in_progress)",
+          "expr": "sum(apex_active_agents)",
           "legendFormat": "In Progress",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Tasks In Progress",
+      "title": "Active Tasks",
       "type": "stat"
     },
     {
@@ -214,7 +214,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_tasks_completed_total[5m]))",
+          "expr": "sum(rate(apex_tasks_completed[5m]))",
           "legendFormat": "Throughput",
           "range": true,
           "refId": "A"
@@ -282,7 +282,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "(sum(rate(apex_tasks_completed_total{status=\"success\"}[5m])) / sum(rate(apex_tasks_completed_total[5m]))) * 100",
+          "expr": "(sum(rate(apex_tasks_completed{status=\"success\"}[5m])) / sum(rate(apex_tasks_completed[5m]))) * 100",
           "legendFormat": "Success Rate",
           "range": true,
           "refId": "A"
@@ -350,7 +350,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum(rate(apex_task_processing_duration_seconds_bucket[5m])) by (le)) * 1000",
+          "expr": "histogram_quantile(0.95, sum(rate(apex_task_duration_seconds_bucket[5m])) by (le)) * 1000",
           "legendFormat": "P95",
           "range": true,
           "refId": "A"
@@ -528,7 +528,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(apex_task_queue_depth) by (queue_name)",
+          "expr": "sum(apex_queue_depth) by (queue_name)",
           "legendFormat": "{{queue_name}}",
           "range": true,
           "refId": "A"
@@ -617,7 +617,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(apex_task_queue_depth) by (priority)",
+          "expr": "sum(apex_queue_depth) by (priority)",
           "legendFormat": "Priority {{priority}}",
           "range": true,
           "refId": "A"
@@ -806,7 +806,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_tasks_enqueued_total[5m])) by (queue_name)",
+          "expr": "sum(rate(apex_tasks_total[5m])) by (queue_name)",
           "legendFormat": "Enqueued {{queue_name}}",
           "range": true,
           "refId": "A"
@@ -817,7 +817,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_tasks_dequeued_total[5m])) by (queue_name)",
+          "expr": "sum(rate(apex_tasks_completed[5m])) by (queue_name)",
           "legendFormat": "Dequeued {{queue_name}}",
           "range": true,
           "refId": "B"
@@ -919,7 +919,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.50, sum(rate(apex_task_processing_duration_seconds_bucket[5m])) by (le, task_type)) * 1000",
+          "expr": "histogram_quantile(0.50, sum(rate(apex_task_duration_seconds_bucket[5m])) by (le, task_type)) * 1000",
           "legendFormat": "P50 {{task_type}}",
           "range": true,
           "refId": "A"
@@ -930,7 +930,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum(rate(apex_task_processing_duration_seconds_bucket[5m])) by (le, task_type)) * 1000",
+          "expr": "histogram_quantile(0.95, sum(rate(apex_task_duration_seconds_bucket[5m])) by (le, task_type)) * 1000",
           "legendFormat": "P95 {{task_type}}",
           "range": true,
           "refId": "B"
@@ -941,7 +941,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum(rate(apex_task_processing_duration_seconds_bucket[5m])) by (le, task_type)) * 1000",
+          "expr": "histogram_quantile(0.99, sum(rate(apex_task_duration_seconds_bucket[5m])) by (le, task_type)) * 1000",
           "legendFormat": "P99 {{task_type}}",
           "range": true,
           "refId": "C"
@@ -1061,7 +1061,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_tasks_completed_total[5m])) by (status)",
+          "expr": "sum(rate(apex_tasks_completed[5m])) by (status)",
           "legendFormat": "{{status}}",
           "range": true,
           "refId": "A"
@@ -1150,7 +1150,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_tasks_completed_total[5m])) by (task_type)",
+          "expr": "sum(rate(apex_tasks_completed[5m])) by (task_type)",
           "legendFormat": "{{task_type}}",
           "range": true,
           "refId": "A"
@@ -1239,13 +1239,261 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_task_retries_total[5m])) by (task_type)",
+          "expr": "sum(rate(apex_tasks_failed[5m])) by (task_type)",
           "legendFormat": "{{task_type}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Task Retries by Type",
+      "title": "Task Failures by Type",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 },
+      "id": 18,
+      "panels": [],
+      "title": "DAG Execution",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "id": 19,
+      "options": {
+        "legend": { "calcs": ["mean", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(rate(apex_dag_executions_total[5m])) by (status)",
+          "legendFormat": "{{status}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "DAG Execution Rate by Status",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "id": 20,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum(rate(apex_dag_execution_duration_seconds_bucket[5m])) by (le)) * 1000",
+          "legendFormat": "P50",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(apex_dag_execution_duration_seconds_bucket[5m])) by (le)) * 1000",
+          "legendFormat": "P95",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(apex_dag_execution_duration_seconds_bucket[5m])) by (le)) * 1000",
+          "legendFormat": "P99",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "DAG Execution Duration Percentiles",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "id": 21,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(apex_dag_nodes_in_progress)",
+          "legendFormat": "Nodes In Progress",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(apex_dag_nodes_pending)",
+          "legendFormat": "Nodes Pending",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "DAG Node Status",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
+      "id": 22,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(apex_dag_depth) by (dag_id)",
+          "legendFormat": "Depth {{dag_id}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(apex_dag_parallelism) by (dag_id)",
+          "legendFormat": "Parallelism {{dag_id}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "DAG Depth & Parallelism",
       "type": "timeseries"
     }
   ],
@@ -1265,7 +1513,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(apex_task_queue_depth, queue_name)",
+        "definition": "label_values(apex_queue_depth, queue_name)",
         "hide": 0,
         "includeAll": true,
         "label": "Queue",
@@ -1273,7 +1521,7 @@
         "name": "queue",
         "options": [],
         "query": {
-          "query": "label_values(apex_task_queue_depth, queue_name)",
+          "query": "label_values(apex_queue_depth, queue_name)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
@@ -1292,7 +1540,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(apex_tasks_completed_total, task_type)",
+        "definition": "label_values(apex_tasks_completed, task_type)",
         "hide": 0,
         "includeAll": true,
         "label": "Task Type",
@@ -1300,7 +1548,7 @@
         "name": "task_type",
         "options": [],
         "query": {
-          "query": "label_values(apex_tasks_completed_total, task_type)",
+          "query": "label_values(apex_tasks_completed, task_type)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,

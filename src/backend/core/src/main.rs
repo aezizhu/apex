@@ -13,6 +13,7 @@ use apex_core::{
     observability::{self, Tracer},
     api::{self, AppState},
     contracts::ResourceLimits,
+    plugins::PluginRegistry,
 };
 
 #[tokio::main]
@@ -90,10 +91,15 @@ async fn main() -> anyhow::Result<()> {
     );
     tracing::info!("Orchestrator initialized");
 
+    // Create plugin registry
+    let plugin_registry = Arc::new(PluginRegistry::new("./plugins"));
+    tracing::info!("Plugin registry initialized");
+
     // Create app state
     let app_state = AppState {
         orchestrator,
         db,
+        plugin_registry,
     };
 
     // Build router

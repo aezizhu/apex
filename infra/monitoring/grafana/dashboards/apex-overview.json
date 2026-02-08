@@ -86,7 +86,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_http_requests_total[5m]))",
+          "expr": "sum(rate(http_requests_total[5m]))",
           "legendFormat": "Requests/sec",
           "range": true,
           "refId": "A"
@@ -154,7 +154,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum(rate(apex_http_request_duration_seconds_bucket[5m])) by (le)) * 1000",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) * 1000",
           "legendFormat": "P95 Latency",
           "range": true,
           "refId": "A"
@@ -222,7 +222,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(apex_http_requests_total[5m])) * 100",
+          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100",
           "legendFormat": "Error Rate",
           "range": true,
           "refId": "A"
@@ -282,7 +282,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(apex_agents_active)",
+          "expr": "sum(apex_active_agents)",
           "legendFormat": "Active Agents",
           "range": true,
           "refId": "A"
@@ -384,7 +384,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_http_requests_total[5m])) by (method, endpoint)",
+          "expr": "sum(rate(http_requests_total[5m])) by (method, endpoint)",
           "legendFormat": "{{method}} {{endpoint}}",
           "range": true,
           "refId": "A"
@@ -473,7 +473,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.50, sum(rate(apex_http_request_duration_seconds_bucket[5m])) by (le, endpoint)) * 1000",
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint)) * 1000",
           "legendFormat": "P50 {{endpoint}}",
           "range": true,
           "refId": "A"
@@ -484,7 +484,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum(rate(apex_http_request_duration_seconds_bucket[5m])) by (le, endpoint)) * 1000",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint)) * 1000",
           "legendFormat": "P95 {{endpoint}}",
           "range": true,
           "refId": "B"
@@ -495,7 +495,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum(rate(apex_http_request_duration_seconds_bucket[5m])) by (le, endpoint)) * 1000",
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint)) * 1000",
           "legendFormat": "P99 {{endpoint}}",
           "range": true,
           "refId": "C"
@@ -615,7 +615,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(apex_http_requests_total[5m])) by (status)",
+          "expr": "sum(rate(http_requests_total[5m])) by (status)",
           "legendFormat": "{{status}}",
           "range": true,
           "refId": "A"
@@ -704,7 +704,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(apex_http_requests_in_flight) by (endpoint)",
+          "expr": "sum(active_connections) by (endpoint)",
           "legendFormat": "{{endpoint}}",
           "range": true,
           "refId": "A"
@@ -1021,7 +1021,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(apex_http_requests_total, instance)",
+        "definition": "label_values(http_requests_total, instance)",
         "hide": 0,
         "includeAll": true,
         "label": "Instance",
@@ -1029,7 +1029,7 @@
         "name": "instance",
         "options": [],
         "query": {
-          "query": "label_values(apex_http_requests_total, instance)",
+          "query": "label_values(http_requests_total, instance)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,

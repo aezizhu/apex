@@ -1437,7 +1437,7 @@ impl From<AgentError> for ApexError {
 pub enum ContractError {
     #[error("Token limit exceeded: used {used}, limit {limit}")]
     TokenLimitExceeded { used: u64, limit: u64 },
-    #[error("Cost limit exceeded: used \, limit ")]
+    #[error("Cost limit exceeded: used {used}, limit {limit}")]
     CostLimitExceeded { used: f64, limit: f64 },
     #[error("Time limit exceeded: elapsed {elapsed_secs}s, limit {limit_secs}s")]
     TimeLimitExceeded { elapsed_secs: u64, limit_secs: u64 },
@@ -1466,13 +1466,7 @@ impl From<ContractError> for ApexError {
     }
 }
 
-impl From<crate::validation::ValidationErrors> for ApexError {
-    fn from(errors: crate::validation::ValidationErrors) -> Self {
-        let field_messages: Vec<String> = errors.errors().iter().map(|e| format!("{}: {}", e.field, e.message)).collect();
-        let msg = format!("Validation failed: {}", field_messages.join("; "));
-        ApexError::new(ErrorCode::ValidationError, msg).with_context("field_count", errors.errors().len())
-    }
-}
+// Note: From<ValidationErrors> for ApexError is implemented in validation/mod.rs
 
 impl From<axum::extract::rejection::JsonRejection> for ApexError {
     fn from(rejection: axum::extract::rejection::JsonRejection) -> Self {

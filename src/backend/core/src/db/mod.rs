@@ -3,6 +3,7 @@
 //! Uses PostgreSQL for persistent storage with sqlx.
 
 pub mod health;
+pub mod approvals;
 
 use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 use uuid::Uuid;
@@ -250,6 +251,62 @@ impl Database {
         Ok(row)
     }
 
+    /// Update an agent's status. Returns true if the agent was found and updated.
+    pub async fn update_agent_status(&self, agent_id: Uuid, status: &str) -> Result<bool> {
+        let result = sqlx::query(
+            "UPDATE agents SET status = $2, last_active_at = NOW() WHERE id = $1",
+        )
+        .bind(agent_id)
+        .bind(status)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// Partially update an agent's fields. Only non-None values are applied.
+    /// Returns true if the agent was found and updated.
+    pub async fn update_agent(
+        &self,
+        agent_id: Uuid,
+        system_prompt: Option<&str>,
+        max_load: Option<i32>,
+        status: Option<&str>,
+    ) -> Result<bool> {
+        let mut sets = Vec::new();
+        let mut idx = 2u32; // $1 is agent_id
+        if system_prompt.is_some() {
+            sets.push(format!("system_prompt = ${idx}"));
+            idx += 1;
+        }
+        if max_load.is_some() {
+            sets.push(format!("max_load = ${idx}"));
+            idx += 1;
+        }
+        if status.is_some() {
+            sets.push(format!("status = ${idx}"));
+            // idx += 1; — last field, no increment needed
+        }
+        if sets.is_empty() {
+            return Ok(false);
+        }
+        sets.push("last_active_at = NOW()".to_string());
+        let sql = format!("UPDATE agents SET {} WHERE id = $1", sets.join(", "));
+
+        let mut query = sqlx::query(&sql).bind(agent_id);
+        if let Some(v) = system_prompt {
+            query = query.bind(v);
+        }
+        if let Some(v) = max_load {
+            query = query.bind(v);
+        }
+        if let Some(v) = status {
+            query = query.bind(v);
+        }
+        let result = query.execute(&self.pool).await?;
+        Ok(result.rows_affected() > 0)
+    }
+
     /// Delete an agent by ID. Returns true if a row was deleted.
     pub async fn delete_agent(&self, agent_id: Uuid) -> Result<bool> {
         let result = sqlx::query("DELETE FROM agents WHERE id = $1")
@@ -281,6 +338,32 @@ impl Database {
     // DAG Operations
     // ═══════════════════════════════════════════════════════════════════════════
 
+    /// Get paginated DAGs ordered by created_at descending.
+    pub async fn get_dags_paginated(&self, limit: i64, offset: i64) -> Result<Vec<DagRow>> {
+        let rows = sqlx::query_as::<_, DagRow>(
+            r#"
+            SELECT id, name, status, metadata, created_at, started_at, completed_at
+            FROM dags
+            ORDER BY created_at DESC
+            LIMIT $1 OFFSET $2
+            "#,
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows)
+    }
+
+    /// Get total DAG count.
+    pub async fn get_dag_count(&self) -> Result<i64> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM dags")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(count)
+    }
+
     /// Get DAG by ID.
     pub async fn get_dag(&self, dag_id: Uuid) -> Result<Option<DagRow>> {
         let row = sqlx::query_as::<_, DagRow>(
@@ -311,6 +394,30 @@ impl Database {
         .await?;
 
         Ok(rows)
+    }
+
+    /// Update a DAG's status. Returns true if the DAG was found and updated.
+    pub async fn update_dag_status(&self, dag_id: Uuid, status: &str) -> Result<bool> {
+        let now = chrono::Utc::now();
+        let completed_at: Option<DateTime<Utc>> = match status {
+            "completed" | "failed" | "cancelled" => Some(now),
+            _ => None,
+        };
+
+        let result = sqlx::query(
+            r#"
+            UPDATE dags
+            SET status = $2, completed_at = COALESCE($3, completed_at)
+            WHERE id = $1
+            "#,
+        )
+        .bind(dag_id)
+        .bind(status)
+        .bind(completed_at)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected() > 0)
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

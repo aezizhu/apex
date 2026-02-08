@@ -110,16 +110,16 @@ describe('useWebSocket', () => {
       })
 
       expect(ws.send).toHaveBeenCalledWith(
-        JSON.stringify({ type: 'Subscribe', resource: 'agents' })
+        JSON.stringify({ type: 'subscribe', target: { resource: 'all_agents' } })
       )
       expect(ws.send).toHaveBeenCalledWith(
-        JSON.stringify({ type: 'Subscribe', resource: 'tasks' })
+        JSON.stringify({ type: 'subscribe', target: { resource: 'all_tasks' } })
       )
       expect(ws.send).toHaveBeenCalledWith(
-        JSON.stringify({ type: 'Subscribe', resource: 'metrics' })
+        JSON.stringify({ type: 'subscribe', target: { resource: 'metrics', interval_secs: 5 } })
       )
       expect(ws.send).toHaveBeenCalledWith(
-        JSON.stringify({ type: 'Subscribe', resource: 'approvals' })
+        JSON.stringify({ type: 'subscribe', target: { resource: 'approvals' } })
       )
     })
 
@@ -173,13 +173,15 @@ describe('useWebSocket', () => {
       renderHook(() => useWebSocket())
 
       // Simulate 10 failed reconnection attempts
-      for (let i = 0; i < 11; i++) {
+      // Backoff: RECONNECT_DELAY * Math.min(attempt, 5) → 3s, 6s, 9s, 12s, 15s, 15s, ...
+      for (let i = 0; i < 10; i++) {
         const ws = MockWebSocket.getLastInstance()
         act(() => {
           ws.simulateClose()
         })
+        const delay = 3000 * Math.min(i + 1, 5)
         act(() => {
-          vi.advanceTimersByTime(3000)
+          vi.advanceTimersByTime(delay)
         })
       }
 
@@ -192,7 +194,7 @@ describe('useWebSocket', () => {
         ws.simulateClose()
       })
       act(() => {
-        vi.advanceTimersByTime(3000)
+        vi.advanceTimersByTime(15000)
       })
 
       // No new instance should be created
@@ -229,24 +231,24 @@ describe('useWebSocket', () => {
   })
 
   describe('message handling', () => {
-    it('handles AgentUpdate messages', () => {
+    it('handles agent_update messages', () => {
       renderHook(() => useWebSocket())
 
       const ws = MockWebSocket.getLastInstance()
       act(() => {
         ws.simulateOpen()
         ws.simulateMessage({
-          type: 'AgentUpdate',
-          id: 'agent-1',
+          type: 'agent_update',
+          agent_id: 'agent-1',
           name: 'Test Agent',
           model: 'gpt-4',
           status: 'busy',
-          currentLoad: 5,
-          maxLoad: 10,
-          successRate: 0.95,
-          reputationScore: 0.9,
-          totalTokens: 10000,
-          totalCost: 0.5,
+          current_load: 5,
+          max_load: 10,
+          success_rate: 0.95,
+          reputation_score: 0.9,
+          total_tokens: 10000,
+          total_cost: 0.5,
         })
       })
 
@@ -260,22 +262,22 @@ describe('useWebSocket', () => {
       })
     })
 
-    it('handles TaskUpdate messages', () => {
+    it('handles task_update messages', () => {
       renderHook(() => useWebSocket())
 
       const ws = MockWebSocket.getLastInstance()
       act(() => {
         ws.simulateOpen()
         ws.simulateMessage({
-          type: 'TaskUpdate',
-          id: 'task-1',
-          dagId: 'dag-1',
+          type: 'task_update',
+          task_id: 'task-1',
+          dag_id: 'dag-1',
           name: 'Test Task',
           status: 'running',
-          agentId: 'agent-1',
-          tokensUsed: 500,
-          costDollars: 0.01,
-          createdAt: '2024-01-15T12:00:00Z',
+          agent_id: 'agent-1',
+          tokens_used: 500,
+          cost_dollars: 0.01,
+          created_at: '2024-01-15T12:00:00Z',
         })
       })
 
@@ -288,45 +290,58 @@ describe('useWebSocket', () => {
       })
     })
 
-    it('handles MetricsUpdate messages', () => {
+    it('handles metrics messages with nested structure', () => {
       renderHook(() => useWebSocket())
 
       const ws = MockWebSocket.getLastInstance()
       act(() => {
         ws.simulateOpen()
         ws.simulateMessage({
-          type: 'MetricsUpdate',
-          totalTasks: 100,
-          completedTasks: 80,
-          failedTasks: 5,
-          runningTasks: 15,
-          totalAgents: 10,
-          activeAgents: 8,
-          totalTokens: 1000000,
-          totalCost: 25.5,
+          type: 'metrics',
+          agents: {
+            total: 10,
+            active: 8,
+            avg_success_rate: 0.95,
+          },
+          tasks: {
+            running: 15,
+            completed_last_hour: 80,
+            failed_last_hour: 5,
+            avg_duration_ms: 150,
+          },
+          resources: {
+            total_tokens_used: 1000000,
+            total_cost_dollars: 25.5,
+          },
         })
       })
 
       const metrics = useStore.getState().metrics
-      expect(metrics.totalTasks).toBe(100)
-      expect(metrics.completedTasks).toBe(80)
+      expect(metrics.totalAgents).toBe(10)
       expect(metrics.activeAgents).toBe(8)
+      expect(metrics.runningTasks).toBe(15)
+      expect(metrics.completedTasks).toBe(80)
+      expect(metrics.failedTasks).toBe(5)
+      expect(metrics.totalTokens).toBe(1000000)
+      expect(metrics.totalCost).toBe(25.5)
+      expect(metrics.avgLatencyMs).toBe(150)
+      expect(metrics.successRate).toBe(0.95)
     })
 
-    it('handles ApprovalRequest messages', () => {
+    it('handles approval_required messages', () => {
       renderHook(() => useWebSocket())
 
       const ws = MockWebSocket.getLastInstance()
       act(() => {
         ws.simulateOpen()
         ws.simulateMessage({
-          type: 'ApprovalRequest',
-          id: 'approval-1',
-          taskId: 'task-1',
-          agentId: 'agent-1',
-          actionType: 'file_write',
-          actionData: { path: '/tmp/test.txt' },
-          riskScore: 0.8,
+          type: 'approval_required',
+          request_id: 'approval-1',
+          task_id: 'task-1',
+          agent_id: 'agent-1',
+          approval_type: 'file_write',
+          details: { path: '/tmp/test.txt' },
+          created_at: '2024-01-15T12:00:00Z',
         })
       })
 
@@ -369,14 +384,14 @@ describe('useWebSocket', () => {
       )
     })
 
-    it('handles Error messages', () => {
+    it('handles error messages', () => {
       const consoleSpy = vi.spyOn(console, 'error')
       renderHook(() => useWebSocket())
 
       const ws = MockWebSocket.getLastInstance()
       act(() => {
         ws.simulateOpen()
-        ws.simulateMessage({ type: 'Error', message: 'Server error occurred' })
+        ws.simulateMessage({ type: 'error', message: 'Server error occurred' })
       })
 
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -425,8 +440,8 @@ describe('useWebSocket', () => {
       act(() => {
         ws.simulateOpen()
         ws.simulateMessage({
-          type: 'AgentUpdate',
-          id: 'agent-1',
+          type: 'agent_update',
+          agent_id: 'agent-1',
           status: 'idle',
         })
       })
@@ -452,8 +467,8 @@ describe('useWebSocket', () => {
       act(() => {
         ws.simulateOpen()
         ws.simulateMessage({
-          type: 'TaskUpdate',
-          id: 'task-1',
+          type: 'task_update',
+          task_id: 'task-1',
           status: 'pending',
         })
       })
@@ -542,7 +557,7 @@ describe('useWebSocket', () => {
         vi.advanceTimersByTime(30000)
       })
 
-      expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Ping' }))
+      expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'ping' }))
     })
 
     it('does not send ping when disconnected', () => {
