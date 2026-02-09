@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import Dashboard from '@/pages/Dashboard'
 import { useStore } from '@/lib/store'
 
@@ -12,6 +13,7 @@ vi.mock('framer-motion', () => ({
       </div>
     ),
   },
+  AnimatePresence: ({ children }: any) => <>{children}</>,
 }))
 
 // Mock child components
@@ -23,10 +25,21 @@ vi.mock('@/components/metrics/MetricsChart', () => ({
   default: () => <div data-testid="metrics-chart">MetricsChart</div>,
 }))
 
+// Mock react-hot-toast
+vi.mock('react-hot-toast', () => ({
+  default: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}))
+
 // Mock API calls
 vi.mock('@/lib/api', () => ({
   agentApi: { listRaw: vi.fn().mockResolvedValue({ data: [] }) },
-  taskApi: { list: vi.fn().mockResolvedValue({ data: [] }) },
+  taskApi: {
+    list: vi.fn().mockResolvedValue({ data: [] }),
+    create: vi.fn().mockResolvedValue({ data: { id: 't1', name: 'Test', status: 'pending' } }),
+  },
   metricsApi: { getSystem: vi.fn().mockResolvedValue({ data: {} }) },
 }))
 
@@ -73,6 +86,56 @@ describe('Dashboard', () => {
       ])
       render(<Dashboard />)
       expect(screen.getByText('Operational')).toBeInTheDocument()
+    })
+  })
+
+  describe('mission command input', () => {
+    it('renders the Mission Command section', () => {
+      render(<Dashboard />)
+      expect(screen.getByText('Mission Command')).toBeInTheDocument()
+    })
+
+    it('renders the textarea with placeholder', () => {
+      render(<Dashboard />)
+      expect(screen.getByPlaceholderText(/Describe your mission objective/)).toBeInTheDocument()
+    })
+
+    it('renders the Launch button', () => {
+      render(<Dashboard />)
+      expect(screen.getByText('Launch')).toBeInTheDocument()
+    })
+
+    it('renders priority selector', () => {
+      render(<Dashboard />)
+      expect(screen.getByText('Normal')).toBeInTheDocument()
+    })
+
+    it('shows agent execution hint', () => {
+      render(<Dashboard />)
+      expect(screen.getByText(/Agents will bid, plan, and execute in parallel/)).toBeInTheDocument()
+    })
+
+    it('Launch button is disabled when input is empty', () => {
+      render(<Dashboard />)
+      const launchBtn = screen.getByText('Launch').closest('button')
+      expect(launchBtn).toBeDisabled()
+    })
+
+    it('Launch button enables when input has text', async () => {
+      const user = userEvent.setup()
+      render(<Dashboard />)
+      const textarea = screen.getByPlaceholderText(/Describe your mission objective/)
+      await user.type(textarea, 'Analyze the dataset')
+      const launchBtn = screen.getByText('Launch').closest('button')
+      expect(launchBtn).not.toBeDisabled()
+    })
+
+    it('shows priority options when priority button is clicked', async () => {
+      const user = userEvent.setup()
+      render(<Dashboard />)
+      await user.click(screen.getByText('Normal'))
+      expect(screen.getByText('High')).toBeInTheDocument()
+      expect(screen.getByText('Critical')).toBeInTheDocument()
     })
   })
 
@@ -173,6 +236,11 @@ describe('Dashboard', () => {
     it('shows empty state when no tasks', () => {
       render(<Dashboard />)
       expect(screen.getByText('No tasks yet')).toBeInTheDocument()
+    })
+
+    it('shows launch hint in empty state', () => {
+      render(<Dashboard />)
+      expect(screen.getByText(/Launch a mission above/)).toBeInTheDocument()
     })
 
     it('shows tasks when available', () => {

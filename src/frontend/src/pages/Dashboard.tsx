@@ -1,5 +1,5 @@
-import { useEffect, useCallback, useMemo, useRef } from 'react'
-import { motion } from 'framer-motion'
+import { useEffect, useCallback, useMemo, useRef, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import type { LucideIcon } from 'lucide-react'
 import {
   Activity,
@@ -13,7 +13,13 @@ import {
   Network,
   ArrowUpRight,
   Layers,
+  Send,
+  ChevronDown,
+  Terminal,
+  Loader2,
+  Sparkles,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { useStore, selectAgentList, selectTaskList } from '../lib/store'
 import { cn, formatCost, formatTokens, formatDuration } from '../lib/utils'
 import { agentApi, taskApi, metricsApi } from '../lib/api'
@@ -40,7 +46,6 @@ function NeuralConstellation({ agentCount }: { agentCount: number }) {
   const animRef = useRef<number>(0)
   const timeRef = useRef(0)
 
-  // Stable node count: either real agents or ghost nodes
   const nodeCount = Math.max(agentCount, 12)
 
   useEffect(() => {
@@ -61,7 +66,6 @@ function NeuralConstellation({ agentCount }: { agentCount: number }) {
     resize()
     window.addEventListener('resize', resize)
 
-    // Initialize nodes
     const w = canvas.getBoundingClientRect().width
     const h = canvas.getBoundingClientRect().height
 
@@ -87,20 +91,17 @@ function NeuralConstellation({ agentCount }: { agentCount: number }) {
 
       const nodes = nodesRef.current
 
-      // Update positions
       for (const node of nodes) {
         node.x += node.vx
         node.y += node.vy
         node.pulse += node.pulseSpeed
 
-        // Wrap around edges
         if (node.x < -20) node.x = w + 20
         if (node.x > w + 20) node.x = -20
         if (node.y < -20) node.y = h + 20
         if (node.y > h + 20) node.y = -20
       }
 
-      // Draw connections
       const connectionDist = 160
       for (let i = 0; i < nodes.length; i++) {
         const nodeA = nodes[i]!
@@ -122,12 +123,10 @@ function NeuralConstellation({ agentCount }: { agentCount: number }) {
         }
       }
 
-      // Draw nodes
       for (const node of nodes) {
         const pulseAlpha = 0.3 + Math.sin(node.pulse) * 0.15
         const pulseRadius = node.radius + Math.sin(node.pulse) * 0.8
 
-        // Outer glow
         const gradient = ctx.createRadialGradient(
           node.x, node.y, 0,
           node.x, node.y, pulseRadius * 4
@@ -139,7 +138,6 @@ function NeuralConstellation({ agentCount }: { agentCount: number }) {
         ctx.fillStyle = gradient
         ctx.fill()
 
-        // Core
         ctx.beginPath()
         ctx.arc(node.x, node.y, pulseRadius, 0, Math.PI * 2)
         ctx.fillStyle = agentCount > 0
@@ -169,7 +167,7 @@ function NeuralConstellation({ agentCount }: { agentCount: number }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Stat Readout — instrumentation-grade metric display
+// Stat Readout — compact metric display
 // ═══════════════════════════════════════════════════════════════════
 
 interface StatReadoutProps {
@@ -193,7 +191,6 @@ function StatReadout({ label, value, sublabel, icon: Icon, color, delay = 0 }: S
                       hover:border-apex-border-subtle transition-all duration-300 card-accent-top"
         style={{ '--card-accent': color } as React.CSSProperties}
       >
-        {/* Label row */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Icon size={14} className="opacity-50" color={color} />
@@ -202,18 +199,184 @@ function StatReadout({ label, value, sublabel, icon: Icon, color, delay = 0 }: S
             </span>
           </div>
         </div>
-
-        {/* Value */}
         <div className="stat-value text-2xl font-semibold tracking-tight text-apex-text-primary">
           {value}
         </div>
-
-        {/* Sublabel */}
         {sublabel && (
           <div className="mt-1 text-[11px] text-apex-text-muted font-mono">
             {sublabel}
           </div>
         )}
+      </div>
+    </motion.div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Mission Command Input
+// ═══════════════════════════════════════════════════════════════════
+
+const PRIORITY_OPTIONS = [
+  { value: 5, label: 'Normal', color: 'text-apex-text-tertiary' },
+  { value: 8, label: 'High', color: 'text-amber-400' },
+  { value: 10, label: 'Critical', color: 'text-red-400' },
+] as const
+
+function MissionCommandInput({ onMissionLaunched }: { onMissionLaunched: () => void }) {
+  const [objective, setObjective] = useState('')
+  const [priority, setPriority] = useState(5)
+  const [showPriority, setShowPriority] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const priorityRef = useRef<HTMLDivElement>(null)
+
+  const selectedPriority = PRIORITY_OPTIONS.find(p => p.value === priority) || PRIORITY_OPTIONS[0]
+
+  // Close priority dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (priorityRef.current && !priorityRef.current.contains(e.target as HTMLElement)) {
+        setShowPriority(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const handleSubmit = async () => {
+    const trimmed = objective.trim()
+    if (!trimmed || isSubmitting) return
+
+    setIsSubmitting(true)
+    try {
+      await taskApi.create({
+        name: trimmed.length > 60 ? trimmed.slice(0, 60) + '...' : trimmed,
+        prompt: trimmed,
+        priority,
+      })
+      toast.success('Mission dispatched to the swarm')
+      setObjective('')
+      setPriority(5)
+      onMissionLaunched()
+    } catch {
+      toast.error('Failed to dispatch mission — check backend connection')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      handleSubmit()
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.1, duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
+    >
+      <div className="relative rounded-xl border border-apex-border-subtle/50 bg-apex-bg-secondary/60 backdrop-blur-md overflow-hidden
+                      focus-within:border-blue-500/40 transition-colors duration-300">
+        {/* Accent glow on top */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-500/50 to-transparent" />
+
+        {/* Header bar */}
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-apex-border-subtle/30">
+          <Terminal size={14} className="text-blue-400/70" />
+          <span className="text-[11px] font-mono text-apex-text-tertiary uppercase tracking-wider">
+            Mission Command
+          </span>
+          <div className="flex-1" />
+          <span className="text-[10px] font-mono text-apex-text-muted">
+            {navigator.platform.includes('Mac') ? '\u2318' : 'Ctrl'}+Enter to launch
+          </span>
+        </div>
+
+        {/* Input area */}
+        <div className="p-4">
+          <textarea
+            ref={textareaRef}
+            value={objective}
+            onChange={(e) => setObjective(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Describe your mission objective... The swarm will decompose, plan, and execute with parallel agents."
+            className="w-full bg-transparent text-[14px] text-apex-text-primary placeholder:text-apex-text-muted/50
+                       resize-none outline-none min-h-[72px] leading-relaxed"
+            rows={3}
+            disabled={isSubmitting}
+          />
+        </div>
+
+        {/* Action bar */}
+        <div className="flex items-center justify-between px-4 py-3 border-t border-apex-border-subtle/20 bg-apex-bg-tertiary/30">
+          <div className="flex items-center gap-3">
+            {/* Priority selector */}
+            <div ref={priorityRef} className="relative">
+              <button
+                onClick={() => setShowPriority(!showPriority)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-mono
+                           bg-white/[0.03] border border-apex-border-subtle/30 hover:border-apex-border-subtle/50
+                           transition-colors"
+              >
+                <span className="text-apex-text-muted">Priority:</span>
+                <span className={selectedPriority.color}>{selectedPriority.label}</span>
+                <ChevronDown size={12} className="text-apex-text-muted" />
+              </button>
+
+              <AnimatePresence>
+                {showPriority && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute bottom-full left-0 mb-1 py-1 rounded-lg border border-apex-border-subtle/50
+                               bg-apex-bg-secondary shadow-xl min-w-[120px] z-50"
+                  >
+                    {PRIORITY_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => { setPriority(opt.value); setShowPriority(false) }}
+                        className={cn(
+                          'w-full text-left px-3 py-1.5 text-[11px] font-mono hover:bg-white/[0.04] transition-colors',
+                          priority === opt.value ? 'bg-white/[0.06]' : ''
+                        )}
+                      >
+                        <span className={opt.color}>{opt.label}</span>
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <div className="text-[10px] text-apex-text-muted font-mono flex items-center gap-1.5">
+              <Sparkles size={11} className="text-purple-400/50" />
+              Agents will bid, plan, and execute in parallel
+            </div>
+          </div>
+
+          <button
+            onClick={handleSubmit}
+            disabled={!objective.trim() || isSubmitting}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] font-medium transition-all duration-200',
+              objective.trim() && !isSubmitting
+                ? 'bg-blue-500 hover:bg-blue-400 text-white shadow-lg shadow-blue-500/20'
+                : 'bg-white/[0.04] text-apex-text-muted cursor-not-allowed'
+            )}
+          >
+            {isSubmitting ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Send size={14} />
+            )}
+            Launch
+          </button>
+        </div>
       </div>
     </motion.div>
   )
@@ -260,7 +423,7 @@ export default function Dashboard() {
     () =>
       [...tasks]
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, 6),
+        .slice(0, 8),
     [tasks]
   )
 
@@ -283,7 +446,6 @@ export default function Dashboard() {
       {/* Ambient neural constellation background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <NeuralConstellation agentCount={agents.length} />
-        {/* Radial fade at edges */}
         <div className="absolute inset-0"
           style={{
             background: `
@@ -295,7 +457,7 @@ export default function Dashboard() {
       </div>
 
       {/* Content */}
-      <div className="relative z-10 p-6 space-y-6 max-w-[1600px] mx-auto">
+      <div className="relative z-10 p-6 space-y-5 max-w-[1600px] mx-auto">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -8 }}
@@ -331,6 +493,9 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
+        {/* ═══ Mission Command Input ═══ */}
+        <MissionCommandInput onMissionLaunched={refreshData} />
+
         {/* Stat Readouts — 6-column instrumentation strip */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <StatReadout
@@ -339,7 +504,7 @@ export default function Dashboard() {
             sublabel={busyAgents > 0 ? `${busyAgents} active` : 'none active'}
             icon={Users}
             color="#3b82f6"
-            delay={0}
+            delay={0.15}
           />
           <StatReadout
             label="Tasks"
@@ -347,7 +512,7 @@ export default function Dashboard() {
             sublabel={`${metrics.totalTasks} total`}
             icon={Layers}
             color="#8b5cf6"
-            delay={0.05}
+            delay={0.2}
           />
           <StatReadout
             label="Completed"
@@ -355,7 +520,7 @@ export default function Dashboard() {
             sublabel="today"
             icon={CheckCircle}
             color="#10b981"
-            delay={0.1}
+            delay={0.25}
           />
           <StatReadout
             label="Success"
@@ -363,7 +528,7 @@ export default function Dashboard() {
             sublabel={metrics.failedTasks > 0 ? `${metrics.failedTasks} failed` : 'no failures'}
             icon={Activity}
             color={metrics.successRate >= 0.95 ? '#10b981' : metrics.successRate >= 0.8 ? '#f59e0b' : '#ef4444'}
-            delay={0.15}
+            delay={0.3}
           />
           <StatReadout
             label="Tokens"
@@ -371,7 +536,7 @@ export default function Dashboard() {
             sublabel="consumed"
             icon={Zap}
             color="#f59e0b"
-            delay={0.2}
+            delay={0.35}
           />
           <StatReadout
             label="Cost"
@@ -379,7 +544,7 @@ export default function Dashboard() {
             sublabel="total spend"
             icon={DollarSign}
             color="#06b6d4"
-            delay={0.25}
+            delay={0.4}
           />
         </div>
 
@@ -390,7 +555,7 @@ export default function Dashboard() {
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.4 }}
+            transition={{ delay: 0.45, duration: 0.4 }}
             className="lg:col-span-8 rounded-xl border border-apex-border-subtle/40 bg-apex-bg-secondary/30 backdrop-blur-sm overflow-hidden"
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-apex-border-subtle/30">
@@ -413,7 +578,7 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
-            <div className="h-[420px] relative">
+            <div className="h-[360px] relative">
               {hasAgents ? (
                 <AgentGrid maxAgents={200} />
               ) : (
@@ -422,7 +587,6 @@ export default function Dashboard() {
                     <div className="w-20 h-20 rounded-2xl border border-dashed border-apex-border-subtle/50 flex items-center justify-center animate-float">
                       <Cpu size={28} className="text-apex-text-muted/40" />
                     </div>
-                    {/* Orbiting dots */}
                     {[0, 1, 2].map((i) => (
                       <div
                         key={i}
@@ -446,14 +610,14 @@ export default function Dashboard() {
             </div>
           </motion.div>
 
-          {/* Right Column — Activity Feed + System Health */}
+          {/* Right Column — System Health + Recent Tasks */}
           <div className="lg:col-span-4 space-y-4">
 
             {/* System Health */}
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.35, duration: 0.4 }}
+              transition={{ delay: 0.5, duration: 0.4 }}
               className="rounded-xl border border-apex-border-subtle/40 bg-apex-bg-secondary/30 backdrop-blur-sm"
             >
               <div className="flex items-center gap-2 px-4 py-3 border-b border-apex-border-subtle/30">
@@ -463,7 +627,6 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="p-4 space-y-3">
-                {/* Latency */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Clock size={13} className="text-apex-text-muted" />
@@ -474,7 +637,6 @@ export default function Dashboard() {
                   </span>
                 </div>
 
-                {/* Throughput */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <ArrowUpRight size={13} className="text-apex-text-muted" />
@@ -485,7 +647,6 @@ export default function Dashboard() {
                   </span>
                 </div>
 
-                {/* Error rate */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <AlertTriangle size={13} className="text-apex-text-muted" />
@@ -501,12 +662,11 @@ export default function Dashboard() {
                   </span>
                 </div>
 
-                {/* Capacity bar */}
                 <div className="pt-2 mt-1 border-t border-apex-border-subtle/20">
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[11px] text-apex-text-muted font-mono">CAPACITY</span>
                     <span className="text-[11px] text-apex-text-tertiary font-mono">
-                      {metrics.activeAgents}/{metrics.totalAgents || '—'}
+                      {metrics.activeAgents}/{metrics.totalAgents || '\u2014'}
                     </span>
                   </div>
                   <div className="h-1.5 bg-apex-bg-tertiary rounded-full overflow-hidden">
@@ -532,7 +692,7 @@ export default function Dashboard() {
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4, duration: 0.4 }}
+              transition={{ delay: 0.55, duration: 0.4 }}
               className="rounded-xl border border-apex-border-subtle/40 bg-apex-bg-secondary/30 backdrop-blur-sm flex-1"
             >
               <div className="flex items-center gap-2 px-4 py-3 border-b border-apex-border-subtle/30">
@@ -546,7 +706,7 @@ export default function Dashboard() {
                   <div className="py-8 text-center">
                     <p className="text-[12px] text-apex-text-muted">No tasks yet</p>
                     <p className="text-[11px] text-apex-text-muted/60 mt-1">
-                      Submit a task to begin orchestration
+                      Launch a mission above to begin orchestration
                     </p>
                   </div>
                 ) : (
@@ -585,7 +745,7 @@ export default function Dashboard() {
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.45, duration: 0.4 }}
+          transition={{ delay: 0.6, duration: 0.4 }}
           className="rounded-xl border border-apex-border-subtle/40 bg-apex-bg-secondary/30 backdrop-blur-sm"
         >
           <div className="flex items-center gap-2 px-4 py-3 border-b border-apex-border-subtle/30">
