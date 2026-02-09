@@ -55,18 +55,35 @@ impl Database {
     pub async fn insert_task(&self, task: &Task, dag_id: Uuid) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO tasks (id, dag_id, parent_id, name, status, priority, input, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO tasks (id, dag_id, parent_id, name, instruction, status, priority, input, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6::task_status, $7, $8, $9)
             "#,
         )
         .bind(task.id.0)
         .bind(dag_id)
         .bind(task.parent_id.map(|id| id.0))
         .bind(&task.name)
+        .bind(&task.input.instruction)
         .bind(task.status.as_str())
         .bind(task.priority)
         .bind(serde_json::to_value(&task.input)?)
         .bind(task.created_at)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Insert a new DAG.
+    pub async fn insert_dag(&self, id: Uuid, name: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO dags (id, name, status, created_at)
+            VALUES ($1, $2, 'pending'::dag_status, NOW())
+            "#,
+        )
+        .bind(id)
+        .bind(name)
         .execute(&self.pool)
         .await?;
 
@@ -86,7 +103,7 @@ impl Database {
         sqlx::query(
             r#"
             UPDATE tasks
-            SET status = $2, started_at = COALESCE($3, started_at), completed_at = COALESCE($4, completed_at)
+            SET status = $2::task_status, started_at = COALESCE($3, started_at), completed_at = COALESCE($4, completed_at)
             WHERE id = $1
             "#,
         )
@@ -133,8 +150,8 @@ impl Database {
     pub async fn get_task(&self, task_id: TaskId) -> Result<Option<TaskRow>> {
         let row = sqlx::query_as::<_, TaskRow>(
             r#"
-            SELECT id, dag_id, parent_id, agent_id, name, status, priority,
-                   input, output, error, tokens_used, cost_dollars,
+            SELECT id, dag_id, parent_id, agent_id, name, status::TEXT as status, priority,
+                   input, output, error, tokens_used, cost_dollars::DOUBLE PRECISION as cost_dollars,
                    retry_count, created_at, started_at, completed_at
             FROM tasks
             WHERE id = $1
@@ -151,8 +168,8 @@ impl Database {
     pub async fn get_tasks_paginated(&self, limit: i64, offset: i64) -> Result<Vec<TaskRow>> {
         let rows = sqlx::query_as::<_, TaskRow>(
             r#"
-            SELECT id, dag_id, parent_id, agent_id, name, status, priority,
-                   input, output, error, tokens_used, cost_dollars,
+            SELECT id, dag_id, parent_id, agent_id, name, status::TEXT as status, priority,
+                   input, output, error, tokens_used, cost_dollars::DOUBLE PRECISION as cost_dollars,
                    retry_count, created_at, started_at, completed_at
             FROM tasks
             ORDER BY created_at DESC
@@ -179,8 +196,8 @@ impl Database {
     pub async fn get_dag_tasks(&self, dag_id: Uuid) -> Result<Vec<TaskRow>> {
         let rows = sqlx::query_as::<_, TaskRow>(
             r#"
-            SELECT id, dag_id, parent_id, agent_id, name, status, priority,
-                   input, output, error, tokens_used, cost_dollars,
+            SELECT id, dag_id, parent_id, agent_id, name, status::TEXT as status, priority,
+                   input, output, error, tokens_used, cost_dollars::DOUBLE PRECISION as cost_dollars,
                    retry_count, created_at, started_at, completed_at
             FROM tasks
             WHERE dag_id = $1
@@ -203,14 +220,14 @@ impl Database {
         sqlx::query(
             r#"
             INSERT INTO agents (id, name, model, status, current_load, max_load,
-                               success_count, failure_count, total_tokens, total_cost, reputation_score)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                               success_count, failure_count, total_tokens_used, total_cost, reputation_score)
+            VALUES ($1, $2, $3, $4::agent_status, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (id) DO UPDATE SET
                 status = EXCLUDED.status,
                 current_load = EXCLUDED.current_load,
                 success_count = EXCLUDED.success_count,
                 failure_count = EXCLUDED.failure_count,
-                total_tokens = EXCLUDED.total_tokens,
+                total_tokens_used = EXCLUDED.total_tokens_used,
                 total_cost = EXCLUDED.total_cost,
                 reputation_score = EXCLUDED.reputation_score,
                 last_active_at = NOW()
@@ -237,8 +254,10 @@ impl Database {
     pub async fn get_agent(&self, agent_id: Uuid) -> Result<Option<AgentRow>> {
         let row = sqlx::query_as::<_, AgentRow>(
             r#"
-            SELECT id, name, model, system_prompt, status, current_load, max_load,
-                   success_count, failure_count, total_tokens, total_cost, reputation_score,
+            SELECT id, name, model, system_prompt, status::TEXT as status, current_load, max_load,
+                   success_count, failure_count, total_tokens_used as total_tokens,
+                   total_cost::DOUBLE PRECISION as total_cost,
+                   reputation_score::DOUBLE PRECISION as reputation_score,
                    created_at, last_active_at
             FROM agents
             WHERE id = $1
@@ -254,7 +273,7 @@ impl Database {
     /// Update an agent's status. Returns true if the agent was found and updated.
     pub async fn update_agent_status(&self, agent_id: Uuid, status: &str) -> Result<bool> {
         let result = sqlx::query(
-            "UPDATE agents SET status = $2, last_active_at = NOW() WHERE id = $1",
+            "UPDATE agents SET status = $2::agent_status, last_active_at = NOW() WHERE id = $1",
         )
         .bind(agent_id)
         .bind(status)
@@ -321,8 +340,10 @@ impl Database {
     pub async fn get_agents(&self) -> Result<Vec<AgentRow>> {
         let rows = sqlx::query_as::<_, AgentRow>(
             r#"
-            SELECT id, name, model, system_prompt, status, current_load, max_load,
-                   success_count, failure_count, total_tokens, total_cost, reputation_score,
+            SELECT id, name, model, system_prompt, status::TEXT as status, current_load, max_load,
+                   success_count, failure_count, total_tokens_used as total_tokens,
+                   total_cost::DOUBLE PRECISION as total_cost,
+                   reputation_score::DOUBLE PRECISION as reputation_score,
                    created_at, last_active_at
             FROM agents
             ORDER BY name
@@ -342,7 +363,7 @@ impl Database {
     pub async fn get_dags_paginated(&self, limit: i64, offset: i64) -> Result<Vec<DagRow>> {
         let rows = sqlx::query_as::<_, DagRow>(
             r#"
-            SELECT id, name, status, metadata, created_at, started_at, completed_at
+            SELECT id, name, status::TEXT as status, metadata, created_at, started_at, completed_at
             FROM dags
             ORDER BY created_at DESC
             LIMIT $1 OFFSET $2
@@ -578,8 +599,8 @@ impl Database {
                 COUNT(*) FILTER (WHERE status = 'completed') as completed_tasks,
                 COUNT(*) FILTER (WHERE status = 'failed') as failed_tasks,
                 COUNT(*) FILTER (WHERE status = 'running') as running_tasks,
-                COALESCE(SUM(tokens_used), 0) as total_tokens,
-                COALESCE(SUM(cost_dollars), 0.0) as total_cost
+                COALESCE(SUM(tokens_used), 0)::BIGINT as total_tokens,
+                COALESCE(SUM(cost_dollars), 0.0)::DOUBLE PRECISION as total_cost
             FROM tasks
             "#,
         )

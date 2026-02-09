@@ -193,9 +193,9 @@ describe('Dashboard', () => {
       expect(screen.getByText('SYSTEM HEALTH')).toBeInTheDocument()
     })
 
-    it('renders Recent Tasks section', () => {
+    it('renders Mission Feed section', () => {
       render(<Dashboard />)
-      expect(screen.getByText('RECENT TASKS')).toBeInTheDocument()
+      expect(screen.getByText('MISSION FEED')).toBeInTheDocument()
     })
 
     it('renders Performance Trends section', () => {
@@ -232,10 +232,10 @@ describe('Dashboard', () => {
     })
   })
 
-  describe('recent tasks', () => {
+  describe('mission feed', () => {
     it('shows empty state when no tasks', () => {
       render(<Dashboard />)
-      expect(screen.getByText('No tasks yet')).toBeInTheDocument()
+      expect(screen.getByText('No missions dispatched yet')).toBeInTheDocument()
     })
 
     it('shows launch hint in empty state', () => {

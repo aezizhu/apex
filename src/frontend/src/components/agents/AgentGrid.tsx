@@ -85,14 +85,104 @@ export default function AgentGrid({ onAgentSelect, maxAgents = 500 }: AgentGridP
     )
   }
 
+  // Compute node positions for all agents
+  const nodePositions = useMemo(() => {
+    return displayedAgents.map((_, index) => {
+      const col = index % gridSize.cols
+      const row = Math.floor(index / gridSize.cols)
+      const offset = row % 2 === 1 ? 35 : 0
+      const cx = col * 70 + offset + 25 + 30 // center of hexagon
+      const cy = row * 60 + 25 + 30
+      return { cx, cy, col, row }
+    })
+  }, [displayedAgents, gridSize])
+
+  // Compute edges between neighboring hexagons
+  const edges = useMemo(() => {
+    const result: Array<{ x1: number; y1: number; x2: number; y2: number; idx1: number; idx2: number }> = []
+    for (let i = 0; i < nodePositions.length; i++) {
+      for (let j = i + 1; j < nodePositions.length; j++) {
+        const a = nodePositions[i]!
+        const b = nodePositions[j]!
+        const dx = a.cx - b.cx
+        const dy = a.cy - b.cy
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        // Connect if within ~1.2 hex-widths (adjacent in hex grid)
+        if (dist < 90) {
+          result.push({ x1: a.cx, y1: a.cy, x2: b.cx, y2: b.cy, idx1: i, idx2: j })
+        }
+      }
+    }
+    return result
+  }, [nodePositions])
+
+  const svgWidth = gridSize.cols * 70 + 100
+  const svgHeight = gridSize.rows * 60 + 100
+
   return (
     <div className="relative w-full h-full overflow-auto">
+      {/* SVG for connection lines */}
+      <svg
+        className="absolute inset-0 pointer-events-none"
+        width={svgWidth}
+        height={svgHeight}
+        style={{ minHeight: 400 }}
+      >
+        <defs>
+          <linearGradient id="edge-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
+            <stop offset="50%" stopColor="#8b5cf6" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.3" />
+          </linearGradient>
+          <filter id="edge-glow">
+            <feGaussianBlur stdDeviation="1.5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        {edges.map((edge, i) => {
+          const agent1 = displayedAgents[edge.idx1]
+          const agent2 = displayedAgents[edge.idx2]
+          const eitherBusy = agent1?.status === 'busy' || agent2?.status === 'busy'
+          return (
+            <line
+              key={i}
+              x1={edge.x1}
+              y1={edge.y1}
+              x2={edge.x2}
+              y2={edge.y2}
+              stroke={eitherBusy ? '#3b82f6' : '#6b7280'}
+              strokeWidth={eitherBusy ? 1.5 : 0.8}
+              strokeOpacity={eitherBusy ? 0.5 : 0.15}
+              filter={eitherBusy ? 'url(#edge-glow)' : undefined}
+            />
+          )
+        })}
+        {/* Animated data flow particles on edges for busy agents */}
+        {edges.map((edge, i) => {
+          const agent1 = displayedAgents[edge.idx1]
+          const agent2 = displayedAgents[edge.idx2]
+          if (agent1?.status !== 'busy' && agent2?.status !== 'busy') return null
+          return (
+            <circle key={`pulse-${i}`} r="2" fill="#3b82f6" opacity="0.7">
+              <animateMotion
+                dur={`${2 + Math.random() * 2}s`}
+                repeatCount="indefinite"
+                path={`M${edge.x1},${edge.y1} L${edge.x2},${edge.y2}`}
+              />
+            </circle>
+          )
+        })}
+      </svg>
+
       {/* Grid Container */}
       <div
         className="relative"
         style={{
-          width: gridSize.cols * 70 + 50,
-          height: gridSize.rows * 60 + 50,
+          width: svgWidth,
+          height: svgHeight,
           minHeight: 400,
         }}
       >
@@ -158,6 +248,18 @@ export default function AgentGrid({ onAgentSelect, maxAgents = 500 }: AgentGridP
                   fill={statusColor}
                   opacity={0.9}
                 />
+                {/* Agent name label */}
+                <text
+                  x="50"
+                  y="85"
+                  textAnchor="middle"
+                  fontSize="9"
+                  fill={statusColor}
+                  fillOpacity={0.7}
+                  fontFamily="monospace"
+                >
+                  {agent.name.length > 10 ? agent.name.slice(0, 9) + '...' : agent.name}
+                </text>
                 {/* Load indicator (arc) */}
                 {agent.currentLoad > 0 && (
                   <circle

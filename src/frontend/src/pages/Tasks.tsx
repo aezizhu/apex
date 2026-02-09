@@ -93,7 +93,7 @@ function groupIntoMissions(tasks: Task[]): Mission[] {
 
       return {
         dagId,
-        name: sorted[0].name,
+        name: sorted[0]?.name ?? 'Unknown',
         tasks: sorted,
         status,
         progress: { total: sorted.length, completed, running, failed, pending },
@@ -102,7 +102,7 @@ function groupIntoMissions(tasks: Task[]): Mission[] {
         ],
         totalCost: sorted.reduce((sum, t) => sum + t.costDollars, 0),
         totalTokens: sorted.reduce((sum, t) => sum + t.tokensUsed, 0),
-        createdAt: sorted[0].createdAt,
+        createdAt: sorted[0]?.createdAt ?? new Date().toISOString(),
       }
     })
     .sort((a, b) => {
@@ -313,7 +313,7 @@ function MissionCard({
   onCancelTask: (id: string) => void
   onRetryTask: (id: string) => void
 }) {
-  const cfg = MISSION_STATUS[mission.status]
+  const cfg = MISSION_STATUS[mission.status] ?? { label: mission.status, color: '#6b7280', icon: Clock }
   const StatusIcon = cfg.icon
   const completionPct =
     mission.progress.total > 0

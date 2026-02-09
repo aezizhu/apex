@@ -386,13 +386,49 @@ function MissionCommandInput({ onMissionLaunched }: { onMissionLaunched: () => v
 // Dashboard
 // ═══════════════════════════════════════════════════════════════════
 
+const STATUS_CONFIG: Record<string, { color: string; pulse: boolean; label: string; icon: LucideIcon }> = {
+  pending: { color: 'bg-amber-400/60', pulse: false, label: 'Queued', icon: Clock },
+  ready: { color: 'bg-amber-400', pulse: true, label: 'Ready', icon: Zap },
+  running: { color: 'bg-blue-400', pulse: true, label: 'Running', icon: Loader2 },
+  completed: { color: 'bg-emerald-400', pulse: false, label: 'Done', icon: CheckCircle },
+  failed: { color: 'bg-red-400', pulse: false, label: 'Failed', icon: AlertTriangle },
+  cancelled: { color: 'bg-gray-500', pulse: false, label: 'Cancelled', icon: AlertTriangle },
+}
+
+function TaskStatusBadge({ status }: { status: string }) {
+  const fallback = { color: 'bg-gray-500', pulse: false, label: status, icon: Clock }
+  const config = STATUS_CONFIG[status] || fallback
+  const Icon = config.icon
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', config.color, config.pulse && 'animate-pulse')} />
+      {status === 'running' ? (
+        <Icon size={11} className="text-blue-400 animate-spin" />
+      ) : null}
+      <span className="text-[10px] font-mono text-apex-text-muted uppercase">{config.label}</span>
+    </div>
+  )
+}
+
+function timeAgo(dateStr: string): string {
+  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
+  if (seconds < 5) return 'just now'
+  if (seconds < 60) return `${seconds}s ago`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+  return `${Math.floor(seconds / 86400)}d ago`
+}
+
 export default function Dashboard() {
   const metrics = useStore((s) => s.metrics)
   const agents = useStore(selectAgentList)
   const tasks = useStore(selectTaskList)
+  const wsConnected = useStore((s) => s.wsConnected)
   const setAgents = useStore((s) => s.setAgents)
   const setTasks = useStore((s) => s.setTasks)
   const setMetrics = useStore((s) => s.setMetrics)
+  const [missionActive, setMissionActive] = useState(false)
+  const pollRef = useRef<NodeJS.Timeout>()
 
   const refreshData = useCallback(async () => {
     try {
@@ -415,7 +451,37 @@ export default function Dashboard() {
     }
   }, [setAgents, setTasks, setMetrics])
 
+  // Initial fetch
   useEffect(() => {
+    refreshData()
+  }, [refreshData])
+
+  // Poll every 3s when a mission is active (backup for WebSocket)
+  useEffect(() => {
+    if (missionActive) {
+      pollRef.current = setInterval(refreshData, 3000)
+    }
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [missionActive, refreshData])
+
+  // Auto-detect active missions and stop polling when all done
+  const activeTasks = useMemo(
+    () => tasks.filter((t) => t.status === 'running' || t.status === 'pending' || t.status === 'ready'),
+    [tasks]
+  )
+
+  useEffect(() => {
+    if (missionActive && activeTasks.length === 0 && tasks.length > 0) {
+      // All tasks finished — keep polling a bit then stop
+      const timeout = setTimeout(() => setMissionActive(false), 6000)
+      return () => clearTimeout(timeout)
+    }
+  }, [missionActive, activeTasks.length, tasks.length])
+
+  const handleMissionLaunched = useCallback(() => {
+    setMissionActive(true)
     refreshData()
   }, [refreshData])
 
@@ -423,7 +489,7 @@ export default function Dashboard() {
     () =>
       [...tasks]
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, 8),
+        .slice(0, 12),
     [tasks]
   )
 
@@ -479,6 +545,15 @@ export default function Dashboard() {
                   {hasAgents ? 'Operational' : 'Standby'}
                 </span>
               </div>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.04] border border-apex-border-subtle/30">
+                <div className={cn(
+                  'w-1.5 h-1.5 rounded-full',
+                  wsConnected ? 'bg-cyan-400' : 'bg-red-400 animate-pulse'
+                )} />
+                <span className="text-[10px] font-mono text-apex-text-tertiary uppercase tracking-widest">
+                  {wsConnected ? 'Live' : 'Offline'}
+                </span>
+              </div>
             </div>
             <p className="text-sm text-apex-text-tertiary">
               Multi-agent orchestration &mdash; real-time swarm telemetry
@@ -494,7 +569,7 @@ export default function Dashboard() {
         </motion.div>
 
         {/* ═══ Mission Command Input ═══ */}
-        <MissionCommandInput onMissionLaunched={refreshData} />
+        <MissionCommandInput onMissionLaunched={handleMissionLaunched} />
 
         {/* Stat Readouts — 6-column instrumentation strip */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -688,52 +763,118 @@ export default function Dashboard() {
               </div>
             </motion.div>
 
-            {/* Recent Activity */}
+            {/* Live Mission Feed */}
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.55, duration: 0.4 }}
               className="rounded-xl border border-apex-border-subtle/40 bg-apex-bg-secondary/30 backdrop-blur-sm flex-1"
             >
-              <div className="flex items-center gap-2 px-4 py-3 border-b border-apex-border-subtle/30">
-                <Layers size={14} className="text-purple-400/60" />
-                <span className="text-[12px] font-mono text-apex-text-secondary font-medium">
-                  RECENT TASKS
-                </span>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-apex-border-subtle/30">
+                <div className="flex items-center gap-2">
+                  <Layers size={14} className="text-purple-400/60" />
+                  <span className="text-[12px] font-mono text-apex-text-secondary font-medium">
+                    MISSION FEED
+                  </span>
+                </div>
+                {missionActive && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="flex items-center gap-1.5"
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                    <span className="text-[10px] font-mono text-blue-400">LIVE</span>
+                  </motion.div>
+                )}
               </div>
-              <div className="p-2">
+
+              {/* Active missions summary bar */}
+              {activeTasks.length > 0 && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  className="px-4 py-2.5 border-b border-apex-border-subtle/20 bg-blue-500/[0.04]"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Loader2 size={12} className="text-blue-400 animate-spin" />
+                      <span className="text-[11px] text-blue-300 font-mono">
+                        {activeTasks.filter(t => t.status === 'running').length} running
+                        {activeTasks.filter(t => t.status === 'pending' || t.status === 'ready').length > 0 &&
+                          ` · ${activeTasks.filter(t => t.status === 'pending' || t.status === 'ready').length} queued`}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-apex-text-muted">
+                      {tasks.filter(t => t.status === 'completed').length}/{tasks.length} done
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="mt-2 h-1 bg-apex-bg-tertiary rounded-full overflow-hidden">
+                    <motion.div
+                      className="h-full rounded-full"
+                      style={{ background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)' }}
+                      initial={{ width: '0%' }}
+                      animate={{
+                        width: tasks.length > 0
+                          ? `${(tasks.filter(t => t.status === 'completed').length / tasks.length) * 100}%`
+                          : '0%'
+                      }}
+                      transition={{ duration: 0.5, ease: 'easeOut' }}
+                    />
+                  </div>
+                </motion.div>
+              )}
+
+              <div className="p-2 max-h-[400px] overflow-y-auto">
                 {recentTasks.length === 0 ? (
                   <div className="py-8 text-center">
-                    <p className="text-[12px] text-apex-text-muted">No tasks yet</p>
+                    <p className="text-[12px] text-apex-text-muted">No missions dispatched yet</p>
                     <p className="text-[11px] text-apex-text-muted/60 mt-1">
                       Launch a mission above to begin orchestration
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-0.5">
-                    {recentTasks.map((task) => (
-                      <div
-                        key={task.id}
-                        className="flex items-center gap-3 px-2.5 py-2 rounded-lg hover:bg-white/[0.02] transition-colors"
-                      >
-                        <div className={cn(
-                          'w-1.5 h-1.5 rounded-full shrink-0',
-                          task.status === 'completed' && 'bg-emerald-400',
-                          task.status === 'running' && 'bg-blue-400 animate-pulse',
-                          task.status === 'failed' && 'bg-red-400',
-                          task.status === 'pending' && 'bg-amber-400/60',
-                          !['completed', 'running', 'failed', 'pending'].includes(task.status) && 'bg-gray-500',
-                        )} />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[12px] text-apex-text-secondary truncate">
-                            {task.name}
+                    <AnimatePresence mode="popLayout">
+                      {recentTasks.map((task) => (
+                        <motion.div
+                          key={task.id}
+                          layout
+                          initial={{ opacity: 0, x: -12, height: 0 }}
+                          animate={{ opacity: 1, x: 0, height: 'auto' }}
+                          exit={{ opacity: 0, x: 12, height: 0 }}
+                          transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+                          className={cn(
+                            'flex items-center gap-3 px-2.5 py-2.5 rounded-lg transition-colors',
+                            task.status === 'running' && 'bg-blue-500/[0.05] border border-blue-500/10',
+                            task.status !== 'running' && 'hover:bg-white/[0.02]',
+                          )}
+                        >
+                          <TaskStatusBadge status={task.status} />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[12px] text-apex-text-secondary truncate">
+                              {task.name}
+                            </div>
+                            {task.agentId && (
+                              <div className="text-[10px] text-apex-text-muted font-mono truncate mt-0.5">
+                                agent: {task.agentId.slice(0, 8)}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                        <span className="text-[10px] font-mono text-apex-text-muted shrink-0">
-                          {formatCost(task.costDollars)}
-                        </span>
-                      </div>
-                    ))}
+                          <div className="text-right shrink-0">
+                            <div className="text-[10px] font-mono text-apex-text-muted">
+                              {task.costDollars > 0 ? formatCost(task.costDollars) : timeAgo(task.createdAt)}
+                            </div>
+                            {task.tokensUsed > 0 && (
+                              <div className="text-[9px] font-mono text-apex-text-muted/60">
+                                {formatTokens(task.tokensUsed)}
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
                   </div>
                 )}
               </div>

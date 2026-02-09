@@ -140,7 +140,7 @@ pub struct TaskResponse {
 }
 
 pub async fn create_task(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Json(mut req): Json<CreateTaskRequest>,
 ) -> impl IntoResponse {
     req.sanitize();
@@ -159,9 +159,24 @@ pub async fn create_task(
         artifacts: vec![],
     };
 
-    let mut task = Task::new(req.name, input);
+    let mut task = Task::new(req.name.clone(), input);
     if let Some(priority) = req.priority {
         task.priority = priority;
+    }
+
+    // Create a DAG for this mission and persist the task
+    let dag_id = uuid::Uuid::new_v4();
+    if let Err(e) = state.db.insert_dag(dag_id, &req.name).await {
+        return Json(ApiResponse::error_with_code(
+            format!("Failed to create mission: {e}"),
+            "DatabaseError",
+        ));
+    }
+    if let Err(e) = state.db.insert_task(&task, dag_id).await {
+        return Json(ApiResponse::error_with_code(
+            format!("Failed to persist task: {e}"),
+            "DatabaseError",
+        ));
     }
 
     let response = TaskResponse {
