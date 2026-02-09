@@ -159,7 +159,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO tasks (id, dag_id, name, description, instruction, status, priority, input, metadata, tags) VALUES
 (
-    't0000000-0000-0000-0000-000000000001',
+    'a0000000-0000-0000-0000-000000000001',
     'd0000000-0000-0000-0000-000000000001',
     'research-topic',
     'Research and gather information on the target topic',
@@ -171,7 +171,7 @@ INSERT INTO tasks (id, dag_id, name, description, instruction, status, priority,
     ARRAY['research', 'initial']
 ),
 (
-    't0000000-0000-0000-0000-000000000002',
+    'a0000000-0000-0000-0000-000000000002',
     'd0000000-0000-0000-0000-000000000001',
     'analyze-findings',
     'Analyze research findings and extract insights',
@@ -183,7 +183,7 @@ INSERT INTO tasks (id, dag_id, name, description, instruction, status, priority,
     ARRAY['analysis', 'intermediate']
 ),
 (
-    't0000000-0000-0000-0000-000000000003',
+    'a0000000-0000-0000-0000-000000000003',
     'd0000000-0000-0000-0000-000000000001',
     'generate-code',
     'Generate implementation code based on analysis',
@@ -195,7 +195,7 @@ INSERT INTO tasks (id, dag_id, name, description, instruction, status, priority,
     ARRAY['coding', 'implementation']
 ),
 (
-    't0000000-0000-0000-0000-000000000004',
+    'a0000000-0000-0000-0000-000000000004',
     'd0000000-0000-0000-0000-000000000001',
     'review-output',
     'Review all outputs for quality and accuracy',
@@ -207,7 +207,7 @@ INSERT INTO tasks (id, dag_id, name, description, instruction, status, priority,
     ARRAY['review', 'quality']
 ),
 (
-    't0000000-0000-0000-0000-000000000005',
+    'a0000000-0000-0000-0000-000000000005',
     'd0000000-0000-0000-0000-000000000001',
     'compile-report',
     'Compile final report with all findings and outputs',
@@ -226,9 +226,9 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO dag_nodes (id, dag_id, task_id, node_order, depth_level, dependencies, is_entry_point, is_exit_point) VALUES
 (
-    'n0000000-0000-0000-0000-000000000001',
+    'b0000000-0000-0000-0000-000000000001',
     'd0000000-0000-0000-0000-000000000001',
-    't0000000-0000-0000-0000-000000000001',
+    'a0000000-0000-0000-0000-000000000001',
     1,
     0,
     ARRAY[]::UUID[],
@@ -236,42 +236,42 @@ INSERT INTO dag_nodes (id, dag_id, task_id, node_order, depth_level, dependencie
     FALSE
 ),
 (
-    'n0000000-0000-0000-0000-000000000002',
+    'b0000000-0000-0000-0000-000000000002',
     'd0000000-0000-0000-0000-000000000001',
-    't0000000-0000-0000-0000-000000000002',
+    'a0000000-0000-0000-0000-000000000002',
     2,
     1,
-    ARRAY['t0000000-0000-0000-0000-000000000001']::UUID[],
+    ARRAY['a0000000-0000-0000-0000-000000000001']::UUID[],
     FALSE,
     FALSE
 ),
 (
-    'n0000000-0000-0000-0000-000000000003',
+    'b0000000-0000-0000-0000-000000000003',
     'd0000000-0000-0000-0000-000000000001',
-    't0000000-0000-0000-0000-000000000003',
+    'a0000000-0000-0000-0000-000000000003',
     3,
     2,
-    ARRAY['t0000000-0000-0000-0000-000000000002']::UUID[],
+    ARRAY['a0000000-0000-0000-0000-000000000002']::UUID[],
     FALSE,
     FALSE
 ),
 (
-    'n0000000-0000-0000-0000-000000000004',
+    'b0000000-0000-0000-0000-000000000004',
     'd0000000-0000-0000-0000-000000000001',
-    't0000000-0000-0000-0000-000000000004',
+    'a0000000-0000-0000-0000-000000000004',
     4,
     3,
-    ARRAY['t0000000-0000-0000-0000-000000000002', 't0000000-0000-0000-0000-000000000003']::UUID[],
+    ARRAY['a0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000003']::UUID[],
     FALSE,
     FALSE
 ),
 (
-    'n0000000-0000-0000-0000-000000000005',
+    'b0000000-0000-0000-0000-000000000005',
     'd0000000-0000-0000-0000-000000000001',
-    't0000000-0000-0000-0000-000000000005',
+    'a0000000-0000-0000-0000-000000000005',
     5,
     4,
-    ARRAY['t0000000-0000-0000-0000-000000000004']::UUID[],
+    ARRAY['a0000000-0000-0000-0000-000000000004']::UUID[],
     FALSE,
     TRUE
 )
@@ -283,14 +283,14 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO task_dependencies (task_id, depends_on_id, dependency_type, is_required) VALUES
 -- analyze-findings depends on research-topic
-('t0000000-0000-0000-0000-000000000002', 't0000000-0000-0000-0000-000000000001', 'completion', TRUE),
+('a0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', 'completion', TRUE),
 -- generate-code depends on analyze-findings
-('t0000000-0000-0000-0000-000000000003', 't0000000-0000-0000-0000-000000000002', 'completion', TRUE),
+('a0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000002', 'completion', TRUE),
 -- review-output depends on analyze-findings and generate-code
-('t0000000-0000-0000-0000-000000000004', 't0000000-0000-0000-0000-000000000002', 'completion', TRUE),
-('t0000000-0000-0000-0000-000000000004', 't0000000-0000-0000-0000-000000000003', 'completion', TRUE),
+('a0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000002', 'completion', TRUE),
+('a0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000003', 'completion', TRUE),
 -- compile-report depends on review-output
-('t0000000-0000-0000-0000-000000000005', 't0000000-0000-0000-0000-000000000004', 'completion', TRUE)
+('a0000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000004', 'completion', TRUE)
 ON CONFLICT (task_id, depends_on_id) DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -299,16 +299,16 @@ ON CONFLICT (task_id, depends_on_id) DO NOTHING;
 
 INSERT INTO usage_records (id, agent_id, model, provider, prompt_tokens, completion_tokens, total_tokens, cost_dollars, request_type, latency_ms, response_status, created_at) VALUES
 -- Historical usage data for testing analytics
-('u0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'claude-3-opus-20240229', 'anthropic', 1500, 800, 2300, 0.0825, 'orchestration', 3200, 'success', NOW() - INTERVAL '7 days'),
-('u0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000002', 'claude-3-sonnet-20240229', 'anthropic', 2000, 1500, 3500, 0.0285, 'code_generation', 4500, 'success', NOW() - INTERVAL '6 days'),
-('u0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000003', 'claude-3-sonnet-20240229', 'anthropic', 3000, 2000, 5000, 0.0390, 'research', 5000, 'success', NOW() - INTERVAL '5 days'),
-('u0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000004', 'claude-3-haiku-20240307', 'anthropic', 1000, 500, 1500, 0.000875, 'review', 1200, 'success', NOW() - INTERVAL '4 days'),
-('u0000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000005', 'claude-3-haiku-20240307', 'anthropic', 800, 400, 1200, 0.000700, 'execution', 800, 'success', NOW() - INTERVAL '3 days'),
-('u0000000-0000-0000-0000-000000000006', 'a0000000-0000-0000-0000-000000000001', 'claude-3-opus-20240229', 'anthropic', 2000, 1000, 3000, 0.1050, 'orchestration', 3500, 'success', NOW() - INTERVAL '2 days'),
-('u0000000-0000-0000-0000-000000000007', 'a0000000-0000-0000-0000-000000000002', 'claude-3-sonnet-20240229', 'anthropic', 2500, 2000, 4500, 0.0375, 'code_generation', 4800, 'success', NOW() - INTERVAL '1 day'),
-('u0000000-0000-0000-0000-000000000008', 'a0000000-0000-0000-0000-000000000003', 'claude-3-sonnet-20240229', 'anthropic', 2800, 1800, 4600, 0.0354, 'research', 4200, 'success', NOW() - INTERVAL '12 hours'),
-('u0000000-0000-0000-0000-000000000009', 'a0000000-0000-0000-0000-000000000004', 'claude-3-haiku-20240307', 'anthropic', 1200, 600, 1800, 0.001050, 'review', 1400, 'success', NOW() - INTERVAL '6 hours'),
-('u0000000-0000-0000-0000-000000000010', 'a0000000-0000-0000-0000-000000000005', 'claude-3-haiku-20240307', 'anthropic', 900, 450, 1350, 0.000788, 'execution', 950, 'success', NOW() - INTERVAL '1 hour')
+('c0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'claude-3-opus-20240229', 'anthropic', 1500, 800, 2300, 0.0825, 'orchestration', 3200, 'success', NOW() - INTERVAL '7 days'),
+('c0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000002', 'claude-3-sonnet-20240229', 'anthropic', 2000, 1500, 3500, 0.0285, 'code_generation', 4500, 'success', NOW() - INTERVAL '6 days'),
+('c0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000003', 'claude-3-sonnet-20240229', 'anthropic', 3000, 2000, 5000, 0.0390, 'research', 5000, 'success', NOW() - INTERVAL '5 days'),
+('c0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000004', 'claude-3-haiku-20240307', 'anthropic', 1000, 500, 1500, 0.000875, 'review', 1200, 'success', NOW() - INTERVAL '4 days'),
+('c0000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000005', 'claude-3-haiku-20240307', 'anthropic', 800, 400, 1200, 0.000700, 'execution', 800, 'success', NOW() - INTERVAL '3 days'),
+('c0000000-0000-0000-0000-000000000006', 'a0000000-0000-0000-0000-000000000001', 'claude-3-opus-20240229', 'anthropic', 2000, 1000, 3000, 0.1050, 'orchestration', 3500, 'success', NOW() - INTERVAL '2 days'),
+('c0000000-0000-0000-0000-000000000007', 'a0000000-0000-0000-0000-000000000002', 'claude-3-sonnet-20240229', 'anthropic', 2500, 2000, 4500, 0.0375, 'code_generation', 4800, 'success', NOW() - INTERVAL '1 day'),
+('c0000000-0000-0000-0000-000000000008', 'a0000000-0000-0000-0000-000000000003', 'claude-3-sonnet-20240229', 'anthropic', 2800, 1800, 4600, 0.0354, 'research', 4200, 'success', NOW() - INTERVAL '12 hours'),
+('c0000000-0000-0000-0000-000000000009', 'a0000000-0000-0000-0000-000000000004', 'claude-3-haiku-20240307', 'anthropic', 1200, 600, 1800, 0.001050, 'review', 1400, 'success', NOW() - INTERVAL '6 hours'),
+('c0000000-0000-0000-0000-000000000010', 'a0000000-0000-0000-0000-000000000005', 'claude-3-haiku-20240307', 'anthropic', 900, 450, 1350, 0.000788, 'execution', 950, 'success', NOW() - INTERVAL '1 hour')
 ON CONFLICT (id) DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -317,7 +317,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO audit_logs (id, entity_type, entity_id, action, actor_type, actor_id, actor_name, new_values, metadata, partition_key) VALUES
 (
-    'l0000000-0000-0000-0000-000000000001',
+    'd0000000-0000-0000-0000-000000000001',
     'agent',
     'a0000000-0000-0000-0000-000000000001',
     'create',
@@ -329,7 +329,7 @@ INSERT INTO audit_logs (id, entity_type, entity_id, action, actor_type, actor_id
     CURRENT_DATE
 ),
 (
-    'l0000000-0000-0000-0000-000000000002',
+    'd0000000-0000-0000-0000-000000000002',
     'dag',
     'd0000000-0000-0000-0000-000000000001',
     'create',

@@ -12,6 +12,7 @@ use apex_core::{
     orchestrator::{SwarmOrchestrator, OrchestratorConfig},
     observability::{self, Tracer},
     api::{self, AppState},
+    agents::{DelegationManager, DelegationStrategy},
     contracts::ResourceLimits,
     plugins::PluginRegistry,
 };
@@ -95,11 +96,19 @@ async fn main() -> anyhow::Result<()> {
     let plugin_registry = Arc::new(PluginRegistry::new("./plugins"));
     tracing::info!("Plugin registry initialized");
 
+    // Create delegation manager (shares the orchestrator's agent registry)
+    let delegation_manager = Arc::new(DelegationManager::new(
+        DelegationStrategy::LeastBusy,
+        orchestrator.agents(),
+    ));
+    tracing::info!("Delegation manager initialized");
+
     // Create app state
     let app_state = AppState {
         orchestrator,
         db,
         plugin_registry,
+        delegation_manager,
     };
 
     // Build router

@@ -126,7 +126,7 @@ pub struct SwarmOrchestrator {
     active_dags: DashMap<Uuid, Arc<RwLock<TaskDAG>>>,
 
     /// Registered agents
-    agents: DashMap<AgentId, Arc<Agent>>,
+    agents: Arc<DashMap<AgentId, Arc<Agent>>>,
 
     /// Active contracts
     contracts: DashMap<Uuid, Arc<RwLock<AgentContract>>>,
@@ -158,7 +158,7 @@ impl SwarmOrchestrator {
             db,
             redis_client,
             active_dags: DashMap::new(),
-            agents: DashMap::new(),
+            agents: Arc::new(DashMap::new()),
             contracts: DashMap::new(),
             model_router,
             circuit_breaker,
@@ -176,6 +176,11 @@ impl SwarmOrchestrator {
     /// Deregister an agent from the orchestrator.
     pub fn deregister_agent(&self, agent_id: AgentId) -> bool {
         self.agents.remove(&agent_id).is_some()
+    }
+
+    /// Get a shared reference to the agent registry.
+    pub fn agents(&self) -> Arc<DashMap<AgentId, Arc<Agent>>> {
+        self.agents.clone()
     }
 
     /// Submit a DAG for execution.
@@ -325,7 +330,7 @@ impl SwarmOrchestrator {
         _db: Arc<Database>,
         redis_client: redis::Client,
         model_router: Arc<ModelRouter>,
-        agents: DashMap<AgentId, Arc<Agent>>,
+        agents: Arc<DashMap<AgentId, Arc<Agent>>>,
         circuit_breaker: Arc<CircuitBreaker>,
         default_limits: ResourceLimits,
         task_result_timeout_secs: u64,

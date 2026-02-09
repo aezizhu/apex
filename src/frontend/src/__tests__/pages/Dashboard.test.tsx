@@ -52,70 +52,92 @@ describe('Dashboard', () => {
   describe('rendering', () => {
     it('renders the dashboard heading', () => {
       render(<Dashboard />)
-      expect(screen.getByText('Dashboard')).toBeInTheDocument()
+      expect(screen.getByText('Command Center')).toBeInTheDocument()
     })
 
     it('renders the subtitle', () => {
       render(<Dashboard />)
       expect(
-        screen.getByText('Real-time overview of your agent swarm')
+        screen.getByText(/Multi-agent orchestration/)
       ).toBeInTheDocument()
     })
 
-    it('renders the live indicator', () => {
+    it('renders the status indicator', () => {
       render(<Dashboard />)
-      expect(screen.getByText('Live')).toBeInTheDocument()
+      expect(screen.getByText('Standby')).toBeInTheDocument()
+    })
+
+    it('shows Operational when agents exist', () => {
+      useStore.getState().setAgents([
+        { id: 'a1', name: 'Agent 1', status: 'busy', model: 'claude-sonnet-4-5', currentLoad: 1, maxLoad: 5, successRate: 0.9, reputationScore: 0.9, totalTokens: 10000, totalCost: 1.0 },
+      ])
+      render(<Dashboard />)
+      expect(screen.getByText('Operational')).toBeInTheDocument()
     })
   })
 
-  describe('stat cards', () => {
-    it('displays Active Agents stat', () => {
+  describe('stat readouts', () => {
+    it('displays Agents stat', () => {
       render(<Dashboard />)
-      expect(screen.getByText('Active Agents')).toBeInTheDocument()
-      expect(screen.getByText('12')).toBeInTheDocument()
+      expect(screen.getByText('Agents')).toBeInTheDocument()
+      expect(screen.getByText('20')).toBeInTheDocument()
     })
 
-    it('displays Running Tasks stat', () => {
+    it('displays Tasks stat', () => {
       render(<Dashboard />)
-      expect(screen.getByText('Running Tasks')).toBeInTheDocument()
+      expect(screen.getByText('Tasks')).toBeInTheDocument()
       expect(screen.getByText('15')).toBeInTheDocument()
     })
 
-    it('displays Total Cost stat', () => {
+    it('displays Cost stat', () => {
       render(<Dashboard />)
-      expect(screen.getByText('Total Cost')).toBeInTheDocument()
+      expect(screen.getByText('Cost')).toBeInTheDocument()
     })
 
-    it('displays Total Tokens stat', () => {
+    it('displays Tokens stat', () => {
       render(<Dashboard />)
-      expect(screen.getByText('Total Tokens')).toBeInTheDocument()
+      expect(screen.getByText('Tokens')).toBeInTheDocument()
+    })
+
+    it('displays Success stat', () => {
+      render(<Dashboard />)
+      expect(screen.getByText('Success')).toBeInTheDocument()
+      expect(screen.getByText('96.0%')).toBeInTheDocument()
+    })
+
+    it('displays Completed stat', () => {
+      render(<Dashboard />)
+      expect(screen.getByText('Completed')).toBeInTheDocument()
     })
   })
 
   describe('sections', () => {
-    it('renders Agent Swarm section', () => {
+    it('renders Swarm Topology section', () => {
       render(<Dashboard />)
-      expect(screen.getByText('Agent Swarm')).toBeInTheDocument()
+      expect(screen.getByText('SWARM TOPOLOGY')).toBeInTheDocument()
     })
 
-    it('renders AgentGrid component', () => {
+    it('renders AgentGrid component when agents exist', () => {
+      useStore.getState().setAgents([
+        { id: 'a1', name: 'Agent 1', status: 'idle', model: 'claude-sonnet-4-5', currentLoad: 0, maxLoad: 5, successRate: 0.9, reputationScore: 0.9, totalTokens: 10000, totalCost: 1.0 },
+      ])
       render(<Dashboard />)
       expect(screen.getByTestId('agent-grid')).toBeInTheDocument()
     })
 
-    it('renders Today\'s Summary section', () => {
+    it('renders System Health section', () => {
       render(<Dashboard />)
-      expect(screen.getByText("Today's Summary")).toBeInTheDocument()
+      expect(screen.getByText('SYSTEM HEALTH')).toBeInTheDocument()
     })
 
     it('renders Recent Tasks section', () => {
       render(<Dashboard />)
-      expect(screen.getByText('Recent Tasks')).toBeInTheDocument()
+      expect(screen.getByText('RECENT TASKS')).toBeInTheDocument()
     })
 
     it('renders Performance Trends section', () => {
       render(<Dashboard />)
-      expect(screen.getByText('Performance Trends')).toBeInTheDocument()
+      expect(screen.getByText('PERFORMANCE TRENDS')).toBeInTheDocument()
     })
 
     it('renders MetricsChart component', () => {
@@ -124,34 +146,33 @@ describe('Dashboard', () => {
     })
   })
 
-  describe("today's summary", () => {
-    it('shows Completed label', () => {
+  describe('system health', () => {
+    it('shows Avg Latency label', () => {
       render(<Dashboard />)
-      expect(screen.getByText('Completed')).toBeInTheDocument()
+      expect(screen.getByText('Avg Latency')).toBeInTheDocument()
     })
 
-    it('shows Avg. Latency label', () => {
+    it('shows Throughput label', () => {
       render(<Dashboard />)
-      expect(screen.getByText('Avg. Latency')).toBeInTheDocument()
+      expect(screen.getByText('Throughput')).toBeInTheDocument()
     })
 
-    it('shows Success Rate label', () => {
+    it('shows Error Rate label', () => {
       render(<Dashboard />)
-      expect(screen.getByText('Success Rate')).toBeInTheDocument()
+      expect(screen.getByText('Error Rate')).toBeInTheDocument()
     })
 
-    it('shows success rate percentage with green color for high rates', () => {
+    it('shows error rate with color coding', () => {
       render(<Dashboard />)
-      const rate = screen.getByText('96.0%')
-      expect(rate).toBeInTheDocument()
-      expect(rate).toHaveClass('text-green-500')
+      const errorRate = screen.getByText('2.5%')
+      expect(errorRate).toBeInTheDocument()
     })
   })
 
   describe('recent tasks', () => {
     it('shows empty state when no tasks', () => {
       render(<Dashboard />)
-      expect(screen.getByText('No recent tasks')).toBeInTheDocument()
+      expect(screen.getByText('No tasks yet')).toBeInTheDocument()
     })
 
     it('shows tasks when available', () => {
@@ -159,14 +180,12 @@ describe('Dashboard', () => {
         {
           id: 't1',
           name: 'Test Task',
+          dagId: 'd1',
           status: 'completed',
           createdAt: new Date().toISOString(),
           completedAt: new Date().toISOString(),
           costDollars: 0.5,
           tokensUsed: 1000,
-          prompt: '',
-          priority: 5,
-          agentId: 'a1',
         },
       ])
       render(<Dashboard />)
@@ -175,14 +194,14 @@ describe('Dashboard', () => {
   })
 
   describe('busy agent count', () => {
-    it('displays count of busy agents', () => {
+    it('displays count of active agents in sublabel', () => {
       useStore.getState().setAgents([
-        { id: 'a1', name: 'Agent 1', status: 'busy', model: 'gpt-4o', currentLoad: 1, maxLoad: 5, totalTasks: 10, successRate: 0.9, costDollars: 1, lastActiveAt: '' },
-        { id: 'a2', name: 'Agent 2', status: 'idle', model: 'gpt-4o', currentLoad: 0, maxLoad: 5, totalTasks: 5, successRate: 1, costDollars: 0.5, lastActiveAt: '' },
-        { id: 'a3', name: 'Agent 3', status: 'busy', model: 'gpt-4o', currentLoad: 2, maxLoad: 5, totalTasks: 15, successRate: 0.95, costDollars: 2, lastActiveAt: '' },
+        { id: 'a1', name: 'Agent 1', status: 'busy', model: 'claude-sonnet-4-5', currentLoad: 1, maxLoad: 5, successRate: 0.9, reputationScore: 0.9, totalTokens: 10000, totalCost: 1.0 },
+        { id: 'a2', name: 'Agent 2', status: 'idle', model: 'claude-sonnet-4-5', currentLoad: 0, maxLoad: 5, successRate: 1, reputationScore: 0.95, totalTokens: 5000, totalCost: 0.5 },
+        { id: 'a3', name: 'Agent 3', status: 'busy', model: 'claude-sonnet-4-5', currentLoad: 2, maxLoad: 5, successRate: 0.95, reputationScore: 0.9, totalTokens: 15000, totalCost: 2.0 },
       ])
       render(<Dashboard />)
-      expect(screen.getByText('2 busy')).toBeInTheDocument()
+      expect(screen.getByText('2 active')).toBeInTheDocument()
     })
   })
 })

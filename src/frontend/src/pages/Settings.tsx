@@ -215,10 +215,15 @@ export default function Settings() {
                     onChange={(e) => updateSetting('defaultModel', e.target.value)}
                     className="w-full px-4 py-2 bg-apex-bg-secondary border border-apex-border-subtle rounded-lg focus:outline-none focus:border-apex-accent-primary"
                   >
-                    <option value="gpt-4o-mini">GPT-4o Mini</option>
-                    <option value="gpt-4o">GPT-4o</option>
-                    <option value="claude-3.5-haiku">Claude 3.5 Haiku</option>
-                    <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                    <option value="claude-opus-4-6">Claude Opus 4.6</option>
+                    <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
+                    <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+                    <option value="gpt-5.2">GPT-5.2</option>
+                    <option value="gpt-5.2-mini">GPT-5.2 Mini</option>
+                    <option value="o3">o3</option>
+                    <option value="o4-mini">o4-mini</option>
+                    <option value="gemini-3-pro">Gemini 3 Pro</option>
+                    <option value="gemini-3-flash">Gemini 3 Flash</option>
                   </select>
                 </div>
 

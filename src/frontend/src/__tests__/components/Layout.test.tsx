@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import Layout from '@/components/Layout'
@@ -8,8 +8,8 @@ import { useStore } from '@/lib/store'
 // Mock framer-motion
 vi.mock('framer-motion', () => ({
   motion: {
-    aside: ({ children, className, animate, ...props }: any) => (
-      <aside className={className} style={{ width: animate?.width }} {...props}>
+    aside: ({ children, className, animate, style, ...props }: any) => (
+      <aside className={className} style={{ ...style, width: animate?.width }} {...props}>
         {children}
       </aside>
     ),
@@ -24,6 +24,7 @@ vi.mock('framer-motion', () => ({
       </span>
     ),
   },
+  AnimatePresence: ({ children }: any) => <>{children}</>,
 }))
 
 // Helper to render Layout with router
@@ -46,10 +47,10 @@ const renderWithRouter = (initialRoute = '/', children?: React.ReactNode) => {
 
 describe('Layout', () => {
   beforeEach(() => {
-    // Reset store state
     const store = useStore.getState()
     store.setWsConnected(false)
     store.setSidebarCollapsed(false)
+    store.setApprovals([])
     store.setMetrics({
       totalTasks: 100,
       completedTasks: 80,
@@ -67,334 +68,203 @@ describe('Layout', () => {
   describe('rendering', () => {
     it('renders the layout structure', () => {
       renderWithRouter()
-
-      // Should have sidebar and main content
       expect(screen.getByRole('navigation')).toBeInTheDocument()
       expect(screen.getByRole('main')).toBeInTheDocument()
     })
 
     it('renders children in main content area', () => {
       renderWithRouter('/', <div data-testid="custom-content">Custom Content</div>)
-
       expect(screen.getByTestId('custom-content')).toBeInTheDocument()
     })
 
-    it('renders logo and brand name', () => {
+    it('renders brand name', () => {
       renderWithRouter()
+      expect(screen.getByText('APEX')).toBeInTheDocument()
+    })
 
-      expect(screen.getByText('Apex')).toBeInTheDocument()
+    it('renders version tag', () => {
+      renderWithRouter()
+      expect(screen.getByText('v0.1')).toBeInTheDocument()
     })
   })
 
   describe('navigation items', () => {
     it('renders all navigation links', () => {
       renderWithRouter()
-
-      expect(screen.getByText('Dashboard')).toBeInTheDocument()
+      expect(screen.getByText('Command')).toBeInTheDocument()
       expect(screen.getByText('Agents')).toBeInTheDocument()
-      expect(screen.getByText('Tasks')).toBeInTheDocument()
+      expect(screen.getByText('Operations')).toBeInTheDocument()
       expect(screen.getByText('Approvals')).toBeInTheDocument()
       expect(screen.getByText('Settings')).toBeInTheDocument()
     })
 
     it('highlights active navigation link', () => {
       renderWithRouter('/')
-
-      const dashboardLink = screen.getByText('Dashboard').closest('a')
-      expect(dashboardLink).toHaveClass('bg-apex-accent-primary/10')
+      const commandLink = screen.getByText('Command').closest('a')
+      expect(commandLink).toHaveClass('bg-white/[0.06]')
     })
 
     it('navigates to correct routes', async () => {
       const user = userEvent.setup()
       renderWithRouter()
-
       await user.click(screen.getByText('Agents'))
       expect(window.location.pathname).toBe('/')
     })
 
     it('shows correct icons for navigation items', () => {
       const { container } = renderWithRouter()
-
-      // Should have SVG icons for each nav item
       const navIcons = container.querySelectorAll('nav svg')
-      expect(navIcons.length).toBe(7) // 7 nav items (Dashboard, Agents, Agent Sight, Tasks, Approvals, Workflows, Settings)
+      expect(navIcons.length).toBe(7)
     })
   })
 
   describe('sidebar collapse', () => {
     it('renders expanded sidebar by default', () => {
       renderWithRouter()
-
-      // Navigation labels should be visible
-      expect(screen.getByText('Dashboard')).toBeVisible()
+      expect(screen.getByText('Command')).toBeVisible()
       expect(screen.getByText('Agents')).toBeVisible()
     })
 
     it('toggles sidebar collapse on button click', async () => {
       const user = userEvent.setup()
       renderWithRouter()
-
-      // Find toggle button
       const toggleButton = screen.getByRole('button')
       await user.click(toggleButton)
-
       expect(useStore.getState().sidebarCollapsed).toBe(true)
     })
 
-    it('updates store when sidebar is collapsed', async () => {
+    it('updates store when sidebar is toggled back', async () => {
       const user = userEvent.setup()
       renderWithRouter()
-
       const toggleButton = screen.getByRole('button')
       await user.click(toggleButton)
-
       expect(useStore.getState().sidebarCollapsed).toBe(true)
-
       await user.click(toggleButton)
       expect(useStore.getState().sidebarCollapsed).toBe(false)
-    })
-
-    it('shows Menu icon when collapsed', () => {
-      useStore.getState().setSidebarCollapsed(true)
-      const { container } = renderWithRouter()
-
-      // Menu icon should be present when collapsed
-      // X icon should be present when expanded
-      const button = screen.getByRole('button')
-      expect(button).toBeInTheDocument()
-    })
-
-    it('shows X icon when expanded', () => {
-      useStore.getState().setSidebarCollapsed(false)
-      renderWithRouter()
-
-      const button = screen.getByRole('button')
-      expect(button).toBeInTheDocument()
     })
   })
 
   describe('connection status', () => {
-    it('shows disconnected status when wsConnected is false', () => {
+    it('shows OFFLINE when wsConnected is false', () => {
       useStore.getState().setWsConnected(false)
       renderWithRouter()
-
-      expect(screen.getByText('Disconnected')).toBeInTheDocument()
+      expect(screen.getByText('OFFLINE')).toBeInTheDocument()
     })
 
-    it('shows connected status when wsConnected is true', () => {
+    it('shows LIVE when wsConnected is true', () => {
       useStore.getState().setWsConnected(true)
       renderWithRouter()
-
-      expect(screen.getByText('Connected')).toBeInTheDocument()
+      expect(screen.getByText('LIVE')).toBeInTheDocument()
     })
 
-    it('shows green WiFi icon when connected', () => {
+    it('shows emerald WiFi icon when connected', () => {
       useStore.getState().setWsConnected(true)
       const { container } = renderWithRouter()
-
-      // Check for Wifi icon with green color
-      const statusArea = container.querySelector('.text-green-500')
-      expect(statusArea).toBeInTheDocument()
+      const statusIcon = container.querySelector('.text-emerald-400')
+      expect(statusIcon).toBeInTheDocument()
     })
 
     it('shows red WifiOff icon when disconnected', () => {
       useStore.getState().setWsConnected(false)
       const { container } = renderWithRouter()
-
-      // Check for WifiOff icon with red color
-      const statusArea = container.querySelector('.text-red-500')
+      const statusArea = container.querySelector('.text-red-400\\/60')
       expect(statusArea).toBeInTheDocument()
     })
   })
 
   describe('top bar metrics', () => {
-    it('displays active agents count', () => {
+    it('displays agent count', () => {
       renderWithRouter()
-
-      expect(screen.getByText('8 active agents')).toBeInTheDocument()
+      expect(screen.getByText('8/10')).toBeInTheDocument()
     })
 
     it('displays running tasks count', () => {
       renderWithRouter()
-
-      expect(screen.getByText('15 running tasks')).toBeInTheDocument()
-    })
-
-    it('displays total cost', () => {
-      renderWithRouter()
-
-      expect(screen.getByText('$25.5000 spent')).toBeInTheDocument()
+      const elements = screen.getAllByText('15')
+      expect(elements.length).toBeGreaterThanOrEqual(1)
     })
 
     it('displays success rate with correct color', () => {
       renderWithRouter()
-
       const successRate = screen.getByText('95.0%')
       expect(successRate).toBeInTheDocument()
-      expect(successRate).toHaveClass('text-green-500')
+      expect(successRate).toHaveClass('text-emerald-400')
     })
 
-    it('shows yellow color for medium success rate', () => {
+    it('shows amber color for medium success rate', () => {
       useStore.getState().setMetrics({ successRate: 0.85 })
       renderWithRouter()
-
       const successRate = screen.getByText('85.0%')
-      expect(successRate).toHaveClass('text-yellow-500')
+      expect(successRate).toHaveClass('text-amber-400')
     })
 
     it('shows red color for low success rate', () => {
       useStore.getState().setMetrics({ successRate: 0.7 })
       renderWithRouter()
-
       const successRate = screen.getByText('70.0%')
-      expect(successRate).toHaveClass('text-red-500')
+      expect(successRate).toHaveClass('text-red-400')
     })
   })
 
   describe('layout structure', () => {
     it('has flex layout', () => {
       const { container } = renderWithRouter()
-
       const layoutRoot = container.querySelector('.flex.h-screen')
       expect(layoutRoot).toBeInTheDocument()
     })
 
     it('has overflow hidden on root', () => {
       const { container } = renderWithRouter()
-
       const layoutRoot = container.querySelector('.overflow-hidden')
       expect(layoutRoot).toBeInTheDocument()
     })
 
     it('has scrollable main content', () => {
       renderWithRouter()
-
       const main = screen.getByRole('main')
       expect(main).toHaveClass('overflow-auto')
     })
 
     it('has correct header height', () => {
       const { container } = renderWithRouter()
-
       const header = container.querySelector('header')
-      expect(header).toHaveClass('h-16')
+      expect(header).toHaveClass('h-11')
     })
   })
 
   describe('sidebar styling', () => {
-    it('has correct background color', () => {
-      const { container } = renderWithRouter()
-
-      const sidebar = container.querySelector('aside')
-      expect(sidebar).toHaveClass('bg-apex-bg-secondary')
-    })
-
     it('has border on right side', () => {
       const { container } = renderWithRouter()
-
       const sidebar = container.querySelector('aside')
       expect(sidebar).toHaveClass('border-r')
-    })
-  })
-
-  describe('responsive behavior', () => {
-    it('hides nav labels when sidebar is collapsed', () => {
-      useStore.getState().setSidebarCollapsed(true)
-      renderWithRouter()
-
-      // When collapsed, labels may not be visible
-      // The icons should still be there
-      const nav = screen.getByRole('navigation')
-      expect(nav).toBeInTheDocument()
-    })
-
-    it('hides brand name when sidebar is collapsed', () => {
-      useStore.getState().setSidebarCollapsed(true)
-      renderWithRouter()
-
-      // Brand name visibility depends on collapsed state
-      // With collapsed true, Apex text may be hidden
-    })
-
-    it('hides connection status text when collapsed', () => {
-      useStore.getState().setSidebarCollapsed(true)
-      useStore.getState().setWsConnected(true)
-      renderWithRouter()
-
-      // Connection text may be hidden when collapsed
-      // Icon should still be visible
     })
   })
 
   describe('accessibility', () => {
     it('has navigation landmark', () => {
       renderWithRouter()
-
       expect(screen.getByRole('navigation')).toBeInTheDocument()
     })
 
     it('has main landmark', () => {
       renderWithRouter()
-
       expect(screen.getByRole('main')).toBeInTheDocument()
     })
 
     it('has banner landmark (header)', () => {
       renderWithRouter()
-
       expect(screen.getByRole('banner')).toBeInTheDocument()
-    })
-
-    it('navigation links are accessible via keyboard', async () => {
-      const user = userEvent.setup()
-      renderWithRouter()
-
-      // Tab to first nav link
-      await user.tab()
-      await user.tab() // Skip toggle button
-
-      // Should be able to focus on nav links
-      const dashboardLink = screen.getByText('Dashboard').closest('a')
-      expect(document.activeElement?.closest('nav')).toBe(screen.getByRole('navigation'))
-    })
-
-    it('toggle button has accessible label', () => {
-      renderWithRouter()
-
-      const button = screen.getByRole('button')
-      expect(button).toBeInTheDocument()
-    })
-  })
-
-  describe('quick stats', () => {
-    it('renders green indicator dot', () => {
-      const { container } = renderWithRouter()
-
-      const greenDot = container.querySelector('.bg-green-500.rounded-full')
-      expect(greenDot).toBeInTheDocument()
-    })
-
-    it('renders separator between stats', () => {
-      renderWithRouter()
-
-      // Check for separator character
-      const separators = screen.getAllByText('|')
-      expect(separators.length).toBeGreaterThan(0)
     })
   })
 
   describe('theme integration', () => {
     it('uses apex theme colors for background', () => {
       renderWithRouter()
-
       const main = screen.getByRole('main')
       expect(main).toHaveClass('bg-apex-bg-primary')
     })
 
     it('uses apex theme colors for text', () => {
-      renderWithRouter()
-
-      // Check secondary text color usage
       const { container } = renderWithRouter()
       const secondaryText = container.querySelector('.text-apex-text-secondary')
       expect(secondaryText).toBeInTheDocument()

@@ -75,6 +75,9 @@ pub const V1_PREFIX: &str = "/api/v1";
 /// - `GET /api/v1/approvals/:id` - Get approval details
 /// - `POST /api/v1/approvals/:id/decide` - Approve or deny
 ///
+/// ## Agent Delegation
+/// - `POST /api/v1/agents/:id/delegate` - Delegate a task to another agent
+///
 /// ## Agent Collaboration
 /// - `GET /api/v1/agents/:id/memory` - List agent memories
 /// - `POST /api/v1/agents/:id/memory` - Store a new memory
@@ -136,6 +139,8 @@ pub fn v1_router() -> Router<AppState> {
         .route("/approvals/history", get(approvals::list_approval_history))
         .route("/approvals/:id", get(approvals::get_approval))
         .route("/approvals/:id/decide", post(approvals::decide_approval))
+        // Agent delegation endpoint
+        .route("/agents/:id/delegate", post(agent_collab::delegate_task))
         // Agent collaboration endpoints
         .route("/agents/:id/memory", get(agent_collab::get_agent_memory))
         .route("/agents/:id/memory", post(agent_collab::store_agent_memory))
@@ -197,6 +202,9 @@ pub mod paths {
     pub const APPROVALS_HISTORY: &str = "/api/v1/approvals/history";
     pub const APPROVAL: &str = "/api/v1/approvals/:id";
     pub const APPROVAL_DECIDE: &str = "/api/v1/approvals/:id/decide";
+
+    // Agent delegation routes
+    pub const AGENT_DELEGATE: &str = "/api/v1/agents/:id/delegate";
 
     // Agent collaboration routes
     pub const AGENT_MEMORY: &str = "/api/v1/agents/:id/memory";
