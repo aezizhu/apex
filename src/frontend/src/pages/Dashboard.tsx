@@ -251,7 +251,7 @@ function MissionCommandInput({ onMissionLaunched }: { onMissionLaunched: () => v
     try {
       await taskApi.create({
         name: trimmed.length > 60 ? trimmed.slice(0, 60) + '...' : trimmed,
-        prompt: trimmed,
+        instruction: trimmed,
         priority,
       })
       toast.success('Mission dispatched to the swarm')

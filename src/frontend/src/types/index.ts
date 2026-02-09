@@ -105,10 +105,9 @@ export interface Task {
 
 export interface TaskCreateRequest {
   name: string
-  dagId?: string
-  prompt: string
+  instruction: string
   priority?: number
-  dependencies?: string[]
+  context?: Record<string, unknown>
 }
 
 export interface TaskCancelRequest {

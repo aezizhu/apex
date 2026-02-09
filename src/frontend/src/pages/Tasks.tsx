@@ -533,7 +533,7 @@ export default function Tasks() {
   const [creating, setCreating] = useState(false)
   const [newTask, setNewTask] = useState({
     name: '',
-    prompt: '',
+    instruction: '',
     priority: 5,
   })
 
@@ -579,7 +579,7 @@ export default function Tasks() {
   )
 
   const handleCreate = useCallback(async () => {
-    if (!newTask.name.trim() || !newTask.prompt.trim()) {
+    if (!newTask.name.trim() || !newTask.instruction.trim()) {
       toast.error('Mission name and objective are required')
       return
     }
@@ -587,12 +587,12 @@ export default function Tasks() {
     try {
       await taskApi.create({
         name: newTask.name.trim(),
-        prompt: newTask.prompt.trim(),
+        instruction: newTask.instruction.trim(),
         priority: newTask.priority,
       })
       toast.success(`Mission "${newTask.name}" launched`)
       setShowCreate(false)
-      setNewTask({ name: '', prompt: '', priority: 5 })
+      setNewTask({ name: '', instruction: '', priority: 5 })
       fetchTasks()
     } catch {
       toast.error('Failed to launch mission')
@@ -960,9 +960,9 @@ export default function Tasks() {
                     Objective
                   </label>
                   <textarea
-                    value={newTask.prompt}
+                    value={newTask.instruction}
                     onChange={(e) =>
-                      setNewTask({ ...newTask, prompt: e.target.value })
+                      setNewTask({ ...newTask, instruction: e.target.value })
                     }
                     placeholder="Describe the mission objective. The swarm will decompose and parallelize execution across available agents..."
                     rows={4}
@@ -1020,7 +1020,7 @@ export default function Tasks() {
                   disabled={
                     creating ||
                     !newTask.name.trim() ||
-                    !newTask.prompt.trim()
+                    !newTask.instruction.trim()
                   }
                   className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 rounded-lg transition-all disabled:opacity-40"
                 >
