@@ -224,8 +224,7 @@ CREATE INDEX idx_usage_model_provider ON usage_records(model, provider);
 -- Time-based analytics
 CREATE INDEX idx_usage_created_at ON usage_records(created_at DESC);
 
--- Daily aggregation
-CREATE INDEX idx_usage_daily ON usage_records(DATE(created_at));
+-- Daily aggregation (covered by idx_usage_created_at)
 
 -- Cost analysis
 CREATE INDEX idx_usage_cost ON usage_records(cost_dollars DESC)

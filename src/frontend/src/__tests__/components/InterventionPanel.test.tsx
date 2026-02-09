@@ -23,6 +23,7 @@ describe('InterventionPanel', () => {
     expect(screen.getByText('Pause & Patch')).toBeInTheDocument()
     expect(screen.getByText('Takeover')).toBeInTheDocument()
     expect(screen.getByText('Kill Switch')).toBeInTheDocument()
+    expect(screen.getByText('Delegate Task')).toBeInTheDocument()
   })
   it('calls onClose', () => {
     const onClose = vi.fn()
@@ -64,5 +65,34 @@ describe('InterventionPanel', () => {
     render(<InterventionPanel agent={mockAgent} onClose={onClose} />)
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(onClose).toHaveBeenCalled()
+  })
+  it('toggles delegate section', () => {
+    render(<InterventionPanel agent={mockAgent} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByText('Delegate Task'))
+    expect(screen.getByPlaceholderText(/Analyze the customer feedback/)).toBeInTheDocument()
+  })
+  it('shows strategy and priority dropdowns in delegate section', () => {
+    render(<InterventionPanel agent={mockAgent} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByText('Delegate Task'))
+    expect(screen.getByText('Strategy')).toBeInTheDocument()
+    expect(screen.getByText('Priority')).toBeInTheDocument()
+  })
+  it('calls onDelegate with form data', () => {
+    const onDelegate = vi.fn()
+    render(<InterventionPanel agent={mockAgent} onClose={vi.fn()} onDelegate={onDelegate} />)
+    fireEvent.click(screen.getByText('Delegate Task'))
+    fireEvent.change(screen.getByPlaceholderText(/Analyze the customer feedback/), { target: { value: 'Review this code' } })
+    fireEvent.click(screen.getAllByText('Delegate Task').find((el) => el.tagName === 'BUTTON' && el.textContent === 'Delegate Task')!)
+    expect(onDelegate).toHaveBeenCalledWith('agent-abc', {
+      task: 'Review this code',
+      strategy: 'least_busy',
+      priority: 'normal',
+      toAgent: '',
+    })
+  })
+  it('opens delegate section with keyboard shortcut 5', () => {
+    render(<InterventionPanel agent={mockAgent} onClose={vi.fn()} />)
+    fireEvent.keyDown(window, { key: '5' })
+    expect(screen.getByPlaceholderText(/Analyze the customer feedback/)).toBeInTheDocument()
   })
 })

@@ -59,6 +59,7 @@ use std::sync::Arc;
 
 use crate::orchestrator::SwarmOrchestrator;
 use crate::db::Database;
+use crate::agents::DelegationManager;
 use crate::middleware::{
     SecurityHeadersLayer, SecurityHeadersConfig,
     RequestSizeLayer, RequestSizeConfig,
@@ -79,6 +80,7 @@ pub struct AppState {
     pub orchestrator: Arc<SwarmOrchestrator>,
     pub db: Arc<Database>,
     pub plugin_registry: Arc<PluginRegistry>,
+    pub delegation_manager: Arc<DelegationManager>,
 }
 
 impl AppState {

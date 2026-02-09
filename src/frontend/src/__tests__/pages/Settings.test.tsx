@@ -44,7 +44,7 @@ describe('Settings', () => {
     const store = useStore.getState()
     store.setSettings({
       maxConcurrentAgents: 10,
-      defaultModel: 'gpt-4o-mini',
+      defaultModel: 'claude-sonnet-4-5',
       autoRetryEnabled: false,
       maxRetries: 3,
       logLevel: 'info',
@@ -113,10 +113,10 @@ describe('Settings', () => {
 
     it('renders model options', () => {
       render(<Settings />)
-      expect(screen.getByText('GPT-4o Mini')).toBeInTheDocument()
-      expect(screen.getByText('GPT-4o')).toBeInTheDocument()
-      expect(screen.getByText('Claude 3.5 Haiku')).toBeInTheDocument()
-      expect(screen.getByText('Claude 3.5 Sonnet')).toBeInTheDocument()
+      expect(screen.getByText('Claude Opus 4.6')).toBeInTheDocument()
+      expect(screen.getByText('Claude Sonnet 4.5')).toBeInTheDocument()
+      expect(screen.getByText('Claude Haiku 4.5')).toBeInTheDocument()
+      expect(screen.getByText('GPT-5.2')).toBeInTheDocument()
     })
 
     it('renders Auto-Retry toggle', () => {

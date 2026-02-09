@@ -10,12 +10,20 @@ import {
   Terminal,
   Keyboard,
   ChevronRight,
+  GitBranch,
 } from 'lucide-react'
 import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Input'
 import { type Agent } from '@/lib/store'
 import { cn } from '@/lib/utils'
+
+interface DelegateFormData {
+  task: string
+  strategy: string
+  priority: string
+  toAgent: string
+}
 
 interface InterventionPanelProps {
   agent: Agent
@@ -26,9 +34,10 @@ interface InterventionPanelProps {
   onPatchState?: (agentId: string, state: string) => void
   onTakeover?: (agentId: string) => void
   onKill?: (agentId: string) => void
+  onDelegate?: (agentId: string, data: DelegateFormData) => void
 }
 
-type Section = 'nudge' | 'pause' | 'takeover' | 'kill'
+type Section = 'nudge' | 'pause' | 'takeover' | 'kill' | 'delegate'
 
 export function InterventionPanel({
   agent,
@@ -39,6 +48,7 @@ export function InterventionPanel({
   onPatchState,
   onTakeover,
   onKill,
+  onDelegate,
 }: InterventionPanelProps) {
   const [expandedSection, setExpandedSection] = useState<Section | null>('nudge')
   const [nudgeMessage, setNudgeMessage] = useState('')
@@ -90,6 +100,9 @@ export function InterventionPanel({
           break
         case '4':
           setExpandedSection(expandedSection === 'kill' ? null : 'kill')
+          break
+        case '5':
+          setExpandedSection(expandedSection === 'delegate' ? null : 'delegate')
           break
       }
     }
@@ -161,6 +174,13 @@ export function InterventionPanel({
       icon: <AlertOctagon size={16} />,
       shortcut: '4',
       color: 'text-red-400',
+    },
+    {
+      id: 'delegate',
+      title: 'Delegate Task',
+      icon: <GitBranch size={16} />,
+      shortcut: '5',
+      color: 'text-cyan-400',
     },
   ]
 
@@ -288,6 +308,13 @@ export function InterventionPanel({
                         agentName={agent.name}
                         agentId={agent.id}
                         onKill={onKill}
+                      />
+                    )}
+                    {section.id === 'delegate' && (
+                      <DelegateSection
+                        agentId={agent.id}
+                        agentName={agent.name}
+                        onDelegate={onDelegate}
                       />
                     )}
                   </div>
@@ -539,6 +566,103 @@ function KillSection({
           </AlertDialog.Content>
         </AlertDialog.Portal>
       </AlertDialog.Root>
+    </>
+  )
+}
+
+function DelegateSection({
+  agentId,
+  agentName,
+  onDelegate,
+}: {
+  agentId: string
+  agentName: string
+  onDelegate?: (agentId: string, data: DelegateFormData) => void
+}) {
+  const [task, setTask] = useState('')
+  const [strategy, setStrategy] = useState('least_busy')
+  const [priority, setPriority] = useState('normal')
+  const [toAgent, setToAgent] = useState('')
+
+  const handleDelegate = () => {
+    if (!task.trim()) return
+    onDelegate?.(agentId, { task, strategy, priority, toAgent })
+    setTask('')
+  }
+
+  return (
+    <>
+      <p className="text-xs text-apex-text-tertiary">
+        Delegate a task from {agentName} to another agent using configurable routing.
+      </p>
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-apex-text-secondary">
+          Task Description
+        </label>
+        <Textarea
+          placeholder="e.g., Analyze the customer feedback data and generate a summary report..."
+          value={task}
+          onChange={(e) => setTask(e.target.value)}
+          rows={3}
+          className="text-sm"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-apex-text-secondary">
+            Strategy
+          </label>
+          <select
+            value={strategy}
+            onChange={(e) => setStrategy(e.target.value)}
+            className="w-full px-2 py-1.5 bg-apex-bg-primary border border-apex-border-subtle rounded-lg text-xs focus:outline-none focus:border-apex-accent-primary"
+          >
+            <option value="least_busy">Least Busy</option>
+            <option value="round_robin">Round Robin</option>
+            <option value="broadcast">Broadcast</option>
+            <option value="capability">Capability</option>
+            <option value="direct">Direct</option>
+          </select>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-apex-text-secondary">
+            Priority
+          </label>
+          <select
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+            className="w-full px-2 py-1.5 bg-apex-bg-primary border border-apex-border-subtle rounded-lg text-xs focus:outline-none focus:border-apex-accent-primary"
+          >
+            <option value="low">Low</option>
+            <option value="normal">Normal</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+      </div>
+      {strategy === 'direct' && (
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-apex-text-secondary">
+            Target Agent ID
+          </label>
+          <input
+            type="text"
+            value={toAgent}
+            onChange={(e) => setToAgent(e.target.value)}
+            placeholder="UUID of target agent"
+            className="w-full px-2 py-1.5 bg-apex-bg-primary border border-apex-border-subtle rounded-lg text-xs font-mono focus:outline-none focus:border-apex-accent-primary"
+          />
+        </div>
+      )}
+      <Button
+        size="sm"
+        onClick={handleDelegate}
+        disabled={!task.trim()}
+        leftIcon={<GitBranch size={14} />}
+        className="w-full"
+      >
+        Delegate Task
+      </Button>
     </>
   )
 }

@@ -28,11 +28,10 @@ use crate::agents::{
     MemoryEntry, MemoryType, Importance, MemoryQuery, InMemoryMemoryStore, MemoryManager,
     AgentMessage, MessageKind, ThreadManager, ConversationThread,
 };
-// DelegationStrategy and DelegationPriority are used by DelegateRequest
-// (currently only exercised in tests; will be wired to a handler when
-// the DelegationManager is added to AppState).
-#[allow(unused_imports)]
-use crate::agents::{DelegationStrategy, DelegationPriority};
+use crate::agents::{
+    DelegationStrategy, DelegationPriority,
+    DelegationRequest as CoreDelegationRequest, DelegationResult, DelegationStatus,
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // In-memory stores (placeholder until wired into AppState)
@@ -52,10 +51,7 @@ static THREAD_MANAGER: LazyLock<ThreadManager> = LazyLock::new(|| {
 // DTOs
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Request body for delegating a task.
-/// Currently used by tests; the delegation endpoint will be wired
-/// once the DelegationManager is added to AppState.
-#[allow(dead_code)]
+/// Request body for delegating a task to another agent.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DelegateRequest {
@@ -66,7 +62,6 @@ pub struct DelegateRequest {
     pub required_capabilities: Option<Vec<String>>,
 }
 
-#[allow(dead_code)]
 impl DelegateRequest {
     fn sanitize(&mut self) {
         self.task = sanitize_string(&self.task);
@@ -329,6 +324,77 @@ impl From<&AgentMessage> for MessageResponse {
             created_at: m.created_at.to_rfc3339(),
         }
     }
+}
+
+/// Serializable delegation result for the API.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DelegationResponse {
+    pub delegation_id: Uuid,
+    pub status: String,
+    pub assigned_agent: Option<Uuid>,
+    pub candidates_evaluated: usize,
+    pub reason: String,
+    pub resolved_at: String,
+}
+
+impl From<DelegationResult> for DelegationResponse {
+    fn from(r: DelegationResult) -> Self {
+        Self {
+            delegation_id: r.delegation_id.0,
+            status: match r.status {
+                DelegationStatus::Accepted => "accepted",
+                DelegationStatus::NoAgentAvailable => "no_agent_available",
+                DelegationStatus::TargetNotFound => "target_not_found",
+                DelegationStatus::TargetUnavailable => "target_unavailable",
+                DelegationStatus::Rejected => "rejected",
+            }.to_string(),
+            assigned_agent: r.assigned_agent.map(|a| a.0),
+            candidates_evaluated: r.candidates_evaluated,
+            reason: r.reason,
+            resolved_at: r.resolved_at.to_rfc3339(),
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Delegation Handler
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// POST /agents/:id/delegate
+pub async fn delegate_task(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(mut req): Json<DelegateRequest>,
+) -> impl IntoResponse {
+    req.sanitize();
+    let errors = req.validate();
+    if !errors.is_empty() {
+        return Json(ApiResponse::error_with_code(
+            errors.join("; "),
+            "VALIDATION_ERROR",
+        ));
+    }
+
+    let from_agent = AgentId(id);
+    let strategy = req.parse_strategy();
+    let priority = req.parse_priority();
+
+    let mut delegation = CoreDelegationRequest::new(from_agent, &req.task)
+        .with_priority(priority);
+
+    if let Some(target_id) = req.to_agent {
+        delegation = delegation.with_target(AgentId(target_id));
+    }
+
+    if let Some(capabilities) = req.required_capabilities {
+        delegation = delegation.with_capabilities(capabilities);
+    }
+
+    let result = state.delegation_manager.delegate_with_strategy(&delegation, &strategy);
+    let response: DelegationResponse = result.into();
+
+    Json(ApiResponse::success(response))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -915,5 +981,124 @@ mod tests {
             };
             assert_eq!(req.parse_importance(), expected);
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Delegation response tests
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_delegation_response_from_accepted() {
+        use crate::agents::{DelegationId, DelegationResult, DelegationStatus};
+        use chrono::Utc;
+
+        let agent_id = AgentId::new();
+        let delegation_id = DelegationId::new();
+        let result = DelegationResult {
+            delegation_id,
+            status: DelegationStatus::Accepted,
+            assigned_agent: Some(agent_id),
+            candidates_evaluated: 3,
+            resolved_at: Utc::now(),
+            result_payload: None,
+            reason: "Least-busy agent selected".to_string(),
+        };
+
+        let response: DelegationResponse = result.into();
+        assert_eq!(response.delegation_id, delegation_id.0);
+        assert_eq!(response.status, "accepted");
+        assert_eq!(response.assigned_agent, Some(agent_id.0));
+        assert_eq!(response.candidates_evaluated, 3);
+        assert_eq!(response.reason, "Least-busy agent selected");
+    }
+
+    #[test]
+    fn test_delegation_response_from_no_agent() {
+        use crate::agents::{DelegationId, DelegationResult, DelegationStatus};
+        use chrono::Utc;
+
+        let delegation_id = DelegationId::new();
+        let result = DelegationResult {
+            delegation_id,
+            status: DelegationStatus::NoAgentAvailable,
+            assigned_agent: None,
+            candidates_evaluated: 0,
+            resolved_at: Utc::now(),
+            result_payload: None,
+            reason: "No agents available".to_string(),
+        };
+
+        let response: DelegationResponse = result.into();
+        assert_eq!(response.status, "no_agent_available");
+        assert!(response.assigned_agent.is_none());
+    }
+
+    #[test]
+    fn test_delegation_response_all_statuses() {
+        use crate::agents::{DelegationId, DelegationResult, DelegationStatus};
+        use chrono::Utc;
+
+        for (status, expected_str) in [
+            (DelegationStatus::Accepted, "accepted"),
+            (DelegationStatus::NoAgentAvailable, "no_agent_available"),
+            (DelegationStatus::TargetNotFound, "target_not_found"),
+            (DelegationStatus::TargetUnavailable, "target_unavailable"),
+            (DelegationStatus::Rejected, "rejected"),
+        ] {
+            let result = DelegationResult {
+                delegation_id: DelegationId::new(),
+                status,
+                assigned_agent: None,
+                candidates_evaluated: 0,
+                resolved_at: Utc::now(),
+                result_payload: None,
+                reason: "test".to_string(),
+            };
+
+            let response: DelegationResponse = result.into();
+            assert_eq!(response.status, expected_str);
+        }
+    }
+
+    #[test]
+    fn test_delegate_request_sanitize() {
+        let mut req = DelegateRequest {
+            task: "  Review <script>alert(1)</script> this code  ".to_string(),
+            to_agent: None,
+            strategy: None,
+            priority: None,
+            required_capabilities: None,
+        };
+        req.sanitize();
+        assert!(!req.task.contains("<script>"));
+        assert!(!req.task.contains("</script>"));
+    }
+
+    #[test]
+    fn test_delegate_request_with_capabilities() {
+        let req = DelegateRequest {
+            task: "Deploy service".to_string(),
+            to_agent: None,
+            strategy: Some("capability".to_string()),
+            priority: Some("high".to_string()),
+            required_capabilities: Some(vec!["kubernetes".to_string(), "docker".to_string()]),
+        };
+        assert!(req.validate().is_empty());
+        assert_eq!(req.parse_strategy(), DelegationStrategy::Capability);
+        assert_eq!(req.parse_priority(), DelegationPriority::High);
+    }
+
+    #[test]
+    fn test_delegate_request_with_target_agent() {
+        let target = Uuid::new_v4();
+        let req = DelegateRequest {
+            task: "Analyze data".to_string(),
+            to_agent: Some(target),
+            strategy: Some("direct".to_string()),
+            priority: None,
+            required_capabilities: None,
+        };
+        assert!(req.validate().is_empty());
+        assert_eq!(req.parse_strategy(), DelegationStrategy::Direct);
     }
 }

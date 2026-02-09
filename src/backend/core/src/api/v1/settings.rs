@@ -38,7 +38,7 @@ impl Default for SystemSettings {
     fn default() -> Self {
         Self {
             max_concurrent_tasks: 100,
-            default_agent_model: "gpt-4o-mini".to_string(),
+            default_agent_model: "claude-sonnet-4-5".to_string(),
             approval_threshold: 1.0,
             auto_retry_enabled: true,
             max_retries: 5,
@@ -306,7 +306,7 @@ mod tests {
     fn test_default_settings() {
         let s = SystemSettings::default();
         assert_eq!(s.max_concurrent_tasks, 100);
-        assert_eq!(s.default_agent_model, "gpt-4o-mini");
+        assert_eq!(s.default_agent_model, "claude-sonnet-4-5");
         assert!(s.auto_retry_enabled);
         assert_eq!(s.log_level, "info");
     }

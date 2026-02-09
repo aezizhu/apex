@@ -40,6 +40,43 @@ export interface AgentUpdateRequest {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Delegation Types
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type DelegationStrategy =
+  | 'direct'
+  | 'broadcast'
+  | 'round_robin'
+  | 'least_busy'
+  | 'capability'
+
+export type DelegationPriority = 'low' | 'normal' | 'high' | 'critical'
+
+export type DelegationStatusType =
+  | 'accepted'
+  | 'no_agent_available'
+  | 'target_not_found'
+  | 'target_unavailable'
+  | 'rejected'
+
+export interface DelegateRequest {
+  task: string
+  toAgent?: string
+  strategy?: DelegationStrategy
+  priority?: DelegationPriority
+  requiredCapabilities?: string[]
+}
+
+export interface DelegationResponse {
+  delegationId: string
+  status: DelegationStatusType
+  assignedAgent?: string
+  candidatesEvaluated: number
+  reason: string
+  resolvedAt: string
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Task Types
 // ═══════════════════════════════════════════════════════════════════════════════
 

@@ -106,24 +106,24 @@ describe('Tasks', () => {
   })
 
   describe('rendering', () => {
-    it('renders the Tasks heading', () => {
+    it('renders the Swarm Operations heading', () => {
       render(<Tasks />)
-      expect(screen.getByText('Tasks')).toBeInTheDocument()
+      expect(screen.getByText('Swarm Operations')).toBeInTheDocument()
     })
 
     it('renders the subtitle', () => {
       render(<Tasks />)
-      expect(screen.getByText('Monitor and manage task execution')).toBeInTheDocument()
+      expect(screen.getByText(/Mission Orchestration.*Parallel Execution/)).toBeInTheDocument()
     })
 
-    it('renders the Submit Task button', () => {
+    it('renders the Launch Mission button', () => {
       render(<Tasks />)
-      expect(screen.getByText('Submit Task')).toBeInTheDocument()
+      expect(screen.getByText('Launch Mission')).toBeInTheDocument()
     })
 
     it('renders search input', () => {
       render(<Tasks />)
-      expect(screen.getByPlaceholderText('Search tasks...')).toBeInTheDocument()
+      expect(screen.getByPlaceholderText('Search missions...')).toBeInTheDocument()
     })
 
     it('renders status filter dropdown', () => {
@@ -136,65 +136,78 @@ describe('Tasks', () => {
     it('shows task status count labels in stats cards', () => {
       useStore.getState().setTasks(mockTasks)
       render(<Tasks />)
-      // Stats labels exist (may appear multiple times due to dropdown). Check there are at least some.
-      expect(screen.getAllByText('Pending').length).toBeGreaterThan(0)
-      expect(screen.getAllByText('Running').length).toBeGreaterThan(0)
-      expect(screen.getAllByText('Completed').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('Queued').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('Executing').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('Complete').length).toBeGreaterThan(0)
       expect(screen.getAllByText('Failed').length).toBeGreaterThan(0)
     })
 
     it('shows correct status counts', () => {
       useStore.getState().setTasks(mockTasks)
       const { container } = render(<Tasks />)
-      // Stats cards have counts as 2xl bold text followed by colored label
       const statCards = container.querySelectorAll('.grid.grid-cols-2 > div')
       expect(statCards.length).toBe(4)
     })
   })
 
-  describe('task list', () => {
-    it('shows tasks when available', () => {
+  describe('missions view', () => {
+    it('shows missions when tasks available (grouped by DAG)', () => {
       useStore.getState().setTasks(mockTasks)
       render(<Tasks />)
+      // Each task has a unique dagId, so each is its own mission
+      // Mission names come from task names
       expect(screen.getByText('Analyze Report')).toBeInTheDocument()
       expect(screen.getByText('Write Summary')).toBeInTheDocument()
       expect(screen.getByText('Failed Job')).toBeInTheDocument()
       expect(screen.getByText('Pending Task')).toBeInTheDocument()
     })
 
-    it('shows empty state when no tasks', () => {
+    it('shows swarm flow diagram when no missions', () => {
       render(<Tasks />)
-      expect(screen.getByText('No tasks found')).toBeInTheDocument()
+      expect(screen.getByText(/No active missions/)).toBeInTheDocument()
+    })
+
+    it('shows how the swarm works in empty state', () => {
+      render(<Tasks />)
+      expect(screen.getByText('How the Swarm Works')).toBeInTheDocument()
+      expect(screen.getByText('DISPATCH')).toBeInTheDocument()
+      expect(screen.getByText('DECOMPOSE')).toBeInTheDocument()
+      expect(screen.getByText('SWARM')).toBeInTheDocument()
+      expect(screen.getByText('CONVERGE')).toBeInTheDocument()
+    })
+
+    it('shows launch first mission button in empty state', () => {
+      render(<Tasks />)
+      expect(screen.getByText('Launch Your First Mission')).toBeInTheDocument()
     })
   })
 
-  describe('create task modal', () => {
-    it('opens modal when Submit Task is clicked', async () => {
+  describe('create mission modal', () => {
+    it('opens modal when Launch Mission is clicked', async () => {
       const user = userEvent.setup()
       render(<Tasks />)
 
-      await user.click(screen.getByText('Submit Task'))
-      // Modal title is also "Submit Task" — check for form fields
-      expect(screen.getByText('Name')).toBeInTheDocument()
-      expect(screen.getByText('Prompt')).toBeInTheDocument()
-      expect(screen.getByText('Priority (1-10)')).toBeInTheDocument()
+      await user.click(screen.getByText('Launch Mission'))
+      expect(screen.getByText('Mission Name')).toBeInTheDocument()
+      expect(screen.getByText('Objective')).toBeInTheDocument()
+      expect(screen.getByText(/Priority Level/)).toBeInTheDocument()
     })
 
-    it('shows Cancel and Submit buttons in modal', async () => {
+    it('shows Cancel and Launch buttons in modal', async () => {
       const user = userEvent.setup()
       render(<Tasks />)
 
-      await user.click(screen.getByText('Submit Task'))
+      await user.click(screen.getByText('Launch Mission'))
       expect(screen.getByText('Cancel')).toBeInTheDocument()
-      expect(screen.getByText('Submit')).toBeInTheDocument()
+      expect(screen.getByText('Launch')).toBeInTheDocument()
     })
 
-    it('shows priority hint', async () => {
+    it('shows swarm execution hint', async () => {
       const user = userEvent.setup()
       render(<Tasks />)
 
-      await user.click(screen.getByText('Submit Task'))
-      expect(screen.getByText('Higher priority tasks are assigned to agents first')).toBeInTheDocument()
+      await user.click(screen.getByText('Launch Mission'))
+      expect(screen.getByText('The swarm will decompose and execute through parallel agents')).toBeInTheDocument()
     })
   })
 })

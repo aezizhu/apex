@@ -31,8 +31,8 @@ vi.mock('@/lib/api', () => ({
 }))
 
 const mockAgents = [
-  { id: 'a1', name: 'Research Agent', status: 'busy', model: 'gpt-4o', currentLoad: 3, maxLoad: 10, totalTasks: 50, successRate: 0.96, costDollars: 5.0, totalCost: 5.0, totalTokens: 10000, reputationScore: 0.9, lastActiveAt: '', createdAt: '2024-01-01' },
-  { id: 'a2', name: 'Writer Agent', status: 'idle', model: 'claude-3.5-sonnet', currentLoad: 0, maxLoad: 5, totalTasks: 20, successRate: 1.0, costDollars: 2.0, totalCost: 2.0, totalTokens: 5000, reputationScore: 0.95, lastActiveAt: '', createdAt: '2024-01-01' },
+  { id: 'a1', name: 'Research Agent', status: 'busy', model: 'gpt-5.2', currentLoad: 3, maxLoad: 10, totalTasks: 50, successRate: 0.96, costDollars: 5.0, totalCost: 5.0, totalTokens: 10000, reputationScore: 0.9, lastActiveAt: '', createdAt: '2024-01-01' },
+  { id: 'a2', name: 'Writer Agent', status: 'idle', model: 'claude-sonnet-4-5', currentLoad: 0, maxLoad: 5, totalTasks: 20, successRate: 1.0, costDollars: 2.0, totalCost: 2.0, totalTokens: 5000, reputationScore: 0.95, lastActiveAt: '', createdAt: '2024-01-01' },
 ]
 
 describe('AgentSight', () => {

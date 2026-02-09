@@ -17,7 +17,6 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";        -- Trigram similarity for text 
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- Task lifecycle states
-COMMENT ON TYPE task_status IS 'Represents the lifecycle state of a task';
 CREATE TYPE task_status AS ENUM (
     'pending',      -- Task created but not yet ready to execute
     'ready',        -- All dependencies satisfied, ready for assignment
