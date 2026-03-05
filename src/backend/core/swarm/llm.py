@@ -37,6 +37,7 @@ async def _close_http_client() -> None:
         await _http_client.aclose()
         _http_client = None
 
+
 # Simple rate-limit guard: minimum seconds between API calls
 _call_lock = asyncio.Lock()
 _MIN_CALL_GAP = 0.5
@@ -84,7 +85,9 @@ class LLMClient:
             "anthropic-version": "2023-06-01",
         }
 
-    def _build_payload(self, messages: list[dict], role: AgentRole, *, stream: bool) -> dict:
+    def _build_payload(
+        self, messages: list[dict], role: AgentRole, *, stream: bool
+    ) -> dict:
         cfg = ROLE_CONFIGS[role]
         system, msgs = _to_anthropic_messages(messages)
         payload: dict = {
@@ -107,13 +110,23 @@ class LLMClient:
             client = _get_http_client()
             resp = await client.post(self._url, json=payload, headers=self._headers)
             if resp.status_code == 429 and attempt < self.MAX_RETRIES:
-                wait = self.BACKOFF_BASE * (2 ** attempt)
-                logger.warning("Rate limited (429), retrying in %ds (%d/%d)", wait, attempt + 1, self.MAX_RETRIES)
+                wait = self.BACKOFF_BASE * (2**attempt)
+                logger.warning(
+                    "Rate limited (429), retrying in %ds (%d/%d)",
+                    wait,
+                    attempt + 1,
+                    self.MAX_RETRIES,
+                )
                 await asyncio.sleep(wait)
                 continue
             if resp.status_code == 529 and attempt < self.MAX_RETRIES:
-                wait = self.BACKOFF_BASE * (2 ** attempt)
-                logger.warning("API overloaded (529), retrying in %ds (%d/%d)", wait, attempt + 1, self.MAX_RETRIES)
+                wait = self.BACKOFF_BASE * (2**attempt)
+                logger.warning(
+                    "API overloaded (529), retrying in %ds (%d/%d)",
+                    wait,
+                    attempt + 1,
+                    self.MAX_RETRIES,
+                )
                 await asyncio.sleep(wait)
                 continue
             if resp.status_code != 200:
@@ -123,11 +136,15 @@ class LLMClient:
             # Extract text from content blocks
             content_blocks = data.get("content", [])
             return "".join(
-                block.get("text", "") for block in content_blocks if block.get("type") == "text"
+                block.get("text", "")
+                for block in content_blocks
+                if block.get("type") == "text"
             )
         return "[LLM Error: max retries exceeded]"
 
-    async def stream(self, messages: list[dict], role: AgentRole) -> AsyncGenerator[str, None]:
+    async def stream(
+        self, messages: list[dict], role: AgentRole
+    ) -> AsyncGenerator[str, None]:
         """Send a streaming request and yield content chunks as they arrive."""
         payload = self._build_payload(messages, role, stream=True)
 
@@ -137,46 +154,51 @@ class LLMClient:
             retry = False
             client = _get_http_client()
             async with client.stream(
-                    "POST", self._url, json=payload, headers=self._headers
-                ) as resp:
-                    if resp.status_code in (429, 529) and attempt < self.MAX_RETRIES:
-                        await resp.aread()
-                        retry = True
-                    elif resp.status_code != 200:
-                        error_body = await resp.aread()
-                        logger.error(
-                            "Claude API stream error %s: %s",
-                            resp.status_code,
-                            error_body.decode("utf-8", errors="replace"),
-                        )
-                        yield f"[LLM Error {resp.status_code}]"
-                        return
-                    else:
-                        # Stream Anthropic SSE events
-                        async for line in resp.aiter_lines():
-                            if not line:
+                "POST", self._url, json=payload, headers=self._headers
+            ) as resp:
+                if resp.status_code in (429, 529) and attempt < self.MAX_RETRIES:
+                    await resp.aread()
+                    retry = True
+                elif resp.status_code != 200:
+                    error_body = await resp.aread()
+                    logger.error(
+                        "Claude API stream error %s: %s",
+                        resp.status_code,
+                        error_body.decode("utf-8", errors="replace"),
+                    )
+                    yield f"[LLM Error {resp.status_code}]"
+                    return
+                else:
+                    # Stream Anthropic SSE events
+                    async for line in resp.aiter_lines():
+                        if not line:
+                            continue
+                        if line.startswith("data:"):
+                            data_str = line[len("data:") :].strip()
+                            try:
+                                event = json.loads(data_str)
+                                event_type = event.get("type", "")
+                                if event_type == "content_block_delta":
+                                    delta = event.get("delta", {})
+                                    if delta.get("type") == "text_delta":
+                                        text = delta.get("text", "")
+                                        if text:
+                                            yield text
+                                elif event_type == "message_stop":
+                                    break
+                            except (json.JSONDecodeError, KeyError):
                                 continue
-                            if line.startswith("data:"):
-                                data_str = line[len("data:"):].strip()
-                                try:
-                                    event = json.loads(data_str)
-                                    event_type = event.get("type", "")
-                                    if event_type == "content_block_delta":
-                                        delta = event.get("delta", {})
-                                        if delta.get("type") == "text_delta":
-                                            text = delta.get("text", "")
-                                            if text:
-                                                yield text
-                                    elif event_type == "message_stop":
-                                        break
-                                except (json.JSONDecodeError, KeyError):
-                                    continue
-                        return  # done streaming
+                    return  # done streaming
 
             # Retry on 429/529 (after exiting the context managers)
             if retry:
-                wait = self.BACKOFF_BASE * (2 ** attempt)
-                logger.warning("Rate limited/overloaded, retrying in %ds (%d/%d)", wait, attempt + 1, self.MAX_RETRIES)
+                wait = self.BACKOFF_BASE * (2**attempt)
+                logger.warning(
+                    "Rate limited/overloaded, retrying in %ds (%d/%d)",
+                    wait,
+                    attempt + 1,
+                    self.MAX_RETRIES,
+                )
                 await asyncio.sleep(wait)
 
         # All retries exhausted
