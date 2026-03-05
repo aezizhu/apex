@@ -22,10 +22,10 @@ pub struct Database {
 
 impl Database {
     /// Create a new database connection pool.
-    pub async fn new(database_url: &str) -> Result<Self> {
+    pub async fn new(database_url: &str, max_connections: u32, min_connections: u32) -> Result<Self> {
         let pool = PgPoolOptions::new()
-            .max_connections(20)
-            .min_connections(5)
+            .max_connections(max_connections)
+            .min_connections(min_connections)
             .acquire_timeout(std::time::Duration::from_secs(5))
             .connect(database_url)
             .await?;
