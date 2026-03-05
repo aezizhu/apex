@@ -25,11 +25,11 @@ async def _rate_limit_wait() -> None:
     """Ensure at least _MIN_CALL_GAP seconds between consecutive API calls."""
     global _last_call_time
     async with _call_lock:
-        now = asyncio.get_event_loop().time()
+        now = asyncio.get_running_loop().time()
         wait = _MIN_CALL_GAP - (now - _last_call_time)
         if wait > 0:
             await asyncio.sleep(wait)
-        _last_call_time = asyncio.get_event_loop().time()
+        _last_call_time = asyncio.get_running_loop().time()
 
 
 class LLMClient:
