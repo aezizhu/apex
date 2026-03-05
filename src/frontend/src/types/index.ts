@@ -304,3 +304,168 @@ export interface FilterParams {
   to?: string
   search?: string
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WebSocket Message Validation Schemas (Zod)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+import { z } from 'zod'
+
+// BaseSocket messages
+const schema for all Web wsMessageBaseSchema = z.object({
+  type: z.string(),
+})
+
+// Connected message - server confirms connection
+export const wsConnectedSchema = wsMessageBaseSchema.extend({
+  type: z.literal('connected'),
+  session_id: z.string().optional(),
+})
+
+// Session restored - server confirms session recovery
+export const wsSessionRestoredSchema = wsMessageBaseSchema.extend({
+  type: z.literal('session_restored'),
+})
+
+// Subscribed - server confirms subscription
+export const wsSubscribedSchema = wsMessageBaseSchema.extend({
+  type: z.literal('subscribed'),
+  target: z.object({
+    resource: z.string(),
+  }),
+})
+
+// Heartbeat - keep-alive from server
+export const wsHeartbeatSchema = wsMessageBaseSchema.extend({
+  type: z.literal('heartbeat'),
+})
+
+// Agent update - real-time agent status change
+export const wsAgentUpdateSchema = wsMessageBaseSchema.extend({
+  type: z.literal('agent_update'),
+  agent_id: z.string(),
+  name: z.string().optional(),
+  model: z.string().optional(),
+  status: z.string().optional(),
+  current_load: z.number().optional(),
+  max_load: z.number().optional(),
+  success_rate: z.number().optional(),
+  reputation_score: z.number().optional(),
+  total_tokens: z.number().optional(),
+  total_cost: z.number().optional(),
+  confidence: z.number().optional(),
+})
+
+// Task update - real-time task status change
+export const wsTaskUpdateSchema = wsMessageBaseSchema.extend({
+  type: z.literal('task_update'),
+  task_id: z.string(),
+  dag_id: z.string().optional(),
+  name: z.string().optional(),
+  status: z.string().optional(),
+  agent_id: z.string().optional(),
+  tokens_used: z.number().optional(),
+  cost_dollars: z.number().optional(),
+  created_at: z.string().optional(),
+  timestamp: z.string().optional(),
+  started_at: z.string().optional(),
+  completed_at: z.string().optional(),
+})
+
+// Metrics - periodic system metrics snapshot
+export const wsMetricsSchema = wsMessageBaseSchema.extend({
+  type: z.literal('metrics'),
+  agents: z
+    .object({
+      total: z.number().optional(),
+      active: z.number().optional(),
+      avg_success_rate: z.number().optional(),
+    })
+    .optional(),
+  tasks: z
+    .object({
+      running: z.number().optional(),
+      completed_last_hour: z.number().optional(),
+      failed_last_hour: z.number().optional(),
+      avg_duration_ms: z.number().optional(),
+    })
+    .optional(),
+  resources: z
+    .object({
+      total_tokens_used: z.number().optional(),
+      total_cost_dollars: z.number().optional(),
+    })
+    .optional(),
+})
+
+// Approval required - server requests human approval
+export const wsApprovalRequiredSchema = wsMessageBaseSchema.extend({
+  type: z.literal('approval_required'),
+  request_id: z.string(),
+  task_id: z.string(),
+  agent_id: z.string(),
+  approval_type: z.string(),
+  details: z.record(z.unknown()).optional(),
+  created_at: z.string().optional(),
+})
+
+// Pong - response to ping
+export const wsPongSchema = wsMessageBaseSchema.extend({
+  type: z.literal('pong'),
+})
+
+// Error - server-side error
+export const wsErrorSchema = wsMessageBaseSchema.extend({
+  type: z.literal('error'),
+  message: z.string().optional(),
+  code: z.string().optional(),
+})
+
+// Discriminated union for all server messages
+export const wsServerMessageSchema = z.discriminatedUnion('type', [
+  wsConnectedSchema,
+  wsSessionRestoredSchema,
+  wsSubscribedSchema,
+  wsHeartbeatSchema,
+  wsAgentUpdateSchema,
+  wsTaskUpdateSchema,
+  wsMetricsSchema,
+  wsApprovalRequiredSchema,
+  wsPongSchema,
+  wsErrorSchema,
+])
+
+// Type inference from schemas
+export type WsConnected = z.infer<typeof wsConnectedSchema>
+export type WsSessionRestored = z.infer<typeof wsSessionRestoredSchema>
+export type WsSubscribed = z.infer<typeof wsSubscribedSchema>
+export type WsHeartbeat = z.infer<typeof wsHeartbeatSchema>
+export type WsAgentUpdate = z.infer<typeof wsAgentUpdateSchema>
+export type WsTaskUpdate = z.infer<typeof wsTaskUpdateSchema>
+export type WsMetrics = z.infer<typeof wsMetricsSchema>
+export type WsApprovalRequired = z.infer<typeof wsApprovalRequiredSchema>
+export type WsPong = z.infer<typeof wsPongSchema>
+export type WsError = z.infer<typeof wsErrorSchema>
+
+// Union type for all server messages
+export type WsServerMessage =
+  | WsConnected
+  | WsSessionRestored
+  | WsSubscribed
+  | WsHeartbeat
+  | WsAgentUpdate
+  | WsTaskUpdate
+  | WsMetrics
+  | WsApprovalRequired
+  | WsPong
+  | WsError
+
+// Helper function to validate and parse incoming WebSocket messages
+export function parseWsMessage(data: unknown): WsServerMessage | null {
+  const result = wsServerMessageSchema.safeParse(data)
+  if (result.success) {
+    return result.data
+  }
+  console.warn('[WS] Invalid message format:', result.error.flatten())
+  return null
+}
