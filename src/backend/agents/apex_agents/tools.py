@@ -426,9 +426,11 @@ async def write_file(path: str, content: str) -> str:
 async def run_command(command: str, timeout: int = 30) -> str:
     """Run a shell command (with safety limits)."""
     try:
+        # Split command into list of arguments (safer than shell=True)
+        import shlex
+        args = shlex.split(command)
         result = subprocess.run(
-            command,
-            shell=True,
+            args,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -485,7 +487,9 @@ async def calculate(expression: str) -> str:
         if not all(c in allowed for c in expression):
             return "Error: Expression contains invalid characters"
 
-        result = eval(expression, {"__builtins__": {}}, {})
+        # Use ast.literal_eval for safe evaluation instead of eval()
+        import ast
+        result = ast.literal_eval(expression)
         return str(result)
     except Exception as e:
         return f"Calculation error: {e}"

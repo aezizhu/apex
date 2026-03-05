@@ -497,7 +497,7 @@ class TaskSpanContext:
 
         # Make it the current span
         context = set_span_in_context(self._span)
-        self._context_token = attach(context)
+        self._token = attach(context)
 
         return self
 
@@ -510,9 +510,6 @@ class TaskSpanContext:
             else:
                 self._span.set_status(Status(StatusCode.OK))
             self._span.end()
-
-        if hasattr(self, "_context_token"):
-            detach(self._context_token)  # type: ignore[arg-type]
 
         if self._token:
             detach(self._token)  # type: ignore[arg-type]

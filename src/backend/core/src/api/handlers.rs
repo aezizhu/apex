@@ -155,7 +155,7 @@ pub async fn create_task(
     }
 
     // Require authentication - task creation must be associated with a user
-    let _auth = match auth {
+    let auth = match auth {
         Some(a) => a,
         None => {
             return Json(ApiResponse::error_with_code(
@@ -177,7 +177,9 @@ pub async fn create_task(
         task.priority = priority;
     }
 
-    // Note: user_id and org_id should be set when the Task struct has these fields
+    // Associate task with authenticated user and their organization
+    task.user_id = Some(auth.user_id.clone());
+    task.org_id = auth.org_id.clone();
 
     // Create a DAG for this mission and persist the task
     let dag_id = uuid::Uuid::new_v4();

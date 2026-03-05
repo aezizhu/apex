@@ -24,6 +24,9 @@ EVENT_TYPES = {
     "chapter_status",     # per-chapter generation status (started, retry, completed, failed)
 }
 
+# Maximum number of events to buffer per session (prevents unbounded memory growth)
+MAX_BUFFER_SIZE = 1000
+
 
 class EventEmitter:
     """Fan-out event emitter backed by asyncio.Queues (one per subscriber).
@@ -60,7 +63,19 @@ class EventEmitter:
     async def emit(self, session_id: str, event_type: str, data: Any) -> None:
         """Push an event to every subscriber of *session_id*."""
         event = {"type": event_type, **data}
-        self._buffers.setdefault(session_id, []).append(event)
+
+        # Get or create buffer for this session
+        buffer = self._buffers.setdefault(session_id, [])
+
+        # Implement eviction policy: remove oldest events when buffer is full
+        if len(buffer) >= MAX_BUFFER_SIZE:
+            # Remove oldest 10% of events to make room for new ones
+            evict_count = max(1, MAX_BUFFER_SIZE // 10)
+            buffer = buffer[evict_count:]
+            self._buffers[session_id] = buffer
+
+        buffer.append(event)
+
         for queue in list(self._subscribers.get(session_id, [])):
             try:
                 await queue.put(event)
