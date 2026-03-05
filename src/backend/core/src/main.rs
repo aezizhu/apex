@@ -109,6 +109,7 @@ async fn main() -> anyhow::Result<()> {
         db,
         plugin_registry,
         delegation_manager,
+        allowed_origins: config.server.allowed_origins,
     };
 
     // Build router

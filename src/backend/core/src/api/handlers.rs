@@ -12,6 +12,7 @@ use super::{AppState, ApiResponse};
 use super::middleware::{sanitize_string, ValidationErrors};
 use crate::dag::{TaskDAG, Task, TaskId, TaskInput, TaskStatus};
 use crate::agents::{Agent, AgentId};
+use crate::middleware::auth::AuthContext;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Health Check
@@ -141,6 +142,7 @@ pub struct TaskResponse {
 
 pub async fn create_task(
     State(state): State<AppState>,
+    auth: Option<AuthContext>,
     Json(mut req): Json<CreateTaskRequest>,
 ) -> impl IntoResponse {
     req.sanitize();
@@ -151,6 +153,17 @@ pub async fn create_task(
             "VALIDATION_ERROR",
         ));
     }
+
+    // Require authentication - task creation must be associated with a user
+    let auth = match auth {
+        Some(a) => a,
+        None => {
+            return Json(ApiResponse::error_with_code(
+                "Authentication required to create tasks".to_string(),
+                "UNAUTHORIZED",
+            ));
+        }
+    };
 
     let input = TaskInput {
         instruction: req.instruction,
@@ -163,6 +176,10 @@ pub async fn create_task(
     if let Some(priority) = req.priority {
         task.priority = priority;
     }
+
+    // Associate task with authenticated user and their organization
+    task.user_id = Some(auth.user_id.clone());
+    task.org_id = auth.org_id.clone();
 
     // Create a DAG for this mission and persist the task
     let dag_id = uuid::Uuid::new_v4();

@@ -84,6 +84,9 @@ class LLMClient:
         )
     """
 
+    # Shared HTTP client for connection pooling
+    _shared_client: httpx.AsyncClient | None = None
+
     def __init__(
         self,
         openai_api_key: str | None = None,
@@ -94,6 +97,23 @@ class LLMClient:
         self.anthropic_api_key = anthropic_api_key
         self.timeout = timeout
         self._logger = logger.bind(component="llm_client")
+
+    @classmethod
+    def _get_client(cls, timeout: float) -> httpx.AsyncClient:
+        """Get or create a shared HTTP client for connection pooling."""
+        if cls._shared_client is None or cls._shared_client.is_closed:
+            cls._shared_client = httpx.AsyncClient(
+                timeout=timeout,
+                limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
+            )
+        return cls._shared_client
+
+    @classmethod
+    async def close(cls) -> None:
+        """Close the shared HTTP client."""
+        if cls._shared_client is not None and not cls._shared_client.is_closed:
+            await cls._shared_client.aclose()
+            cls._shared_client = None
 
     def _get_provider(self, model: str) -> LLMProvider:
         """Determine provider from model name."""
@@ -170,31 +190,31 @@ class LLMClient:
         if not self.openai_api_key:
             raise ValueError("OpenAI API key not configured")
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            payload: dict[str, Any] = {
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-            }
+        client = self._get_client(self.timeout)
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
 
-            if tools:
-                payload["tools"] = [
-                    {"type": "function", "function": t} for t in tools
-                ]
+        if tools:
+            payload["tools"] = [
+                {"type": "function", "function": t} for t in tools
+            ]
 
-            if max_tokens:
-                payload["max_tokens"] = max_tokens
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
 
-            response = await client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.openai_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+        response = await client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self.openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
 
         choice = data["choices"][0]
         message = choice["message"]
@@ -251,37 +271,37 @@ class LLMClient:
                     "content": msg["content"],
                 })
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            payload: dict[str, Any] = {
-                "model": model,
-                "messages": anthropic_messages,
-                "max_tokens": max_tokens or 4096,
-            }
+        client = self._get_client(self.timeout)
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": anthropic_messages,
+            "max_tokens": max_tokens or 4096,
+        }
 
-            if system_content:
-                payload["system"] = system_content
+        if system_content:
+            payload["system"] = system_content
 
-            if tools:
-                payload["tools"] = [
-                    {
-                        "name": t["name"],
-                        "description": t.get("description", ""),
-                        "input_schema": t.get("parameters", {}),
-                    }
-                    for t in tools
-                ]
+        if tools:
+            payload["tools"] = [
+                {
+                    "name": t["name"],
+                    "description": t.get("description", ""),
+                    "input_schema": t.get("parameters", {}),
+                }
+                for t in tools
+            ]
 
-            response = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": self.anthropic_api_key,
-                    "anthropic-version": "2023-06-01",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+        response = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": self.anthropic_api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
 
         # Extract content and tool calls
         content = ""

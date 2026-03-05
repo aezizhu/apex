@@ -146,6 +146,12 @@ pub struct Task {
     /// Contract ID governing this task
     pub contract_id: Option<Uuid>,
 
+    /// User ID who created this task
+    pub user_id: Option<String>,
+
+    /// Organization ID of the user who created this task
+    pub org_id: Option<String>,
+
     /// Number of retry attempts made
     pub retry_count: u32,
 
@@ -186,6 +192,8 @@ impl Task {
             error: None,
             agent_id: None,
             contract_id: None,
+            user_id: None,
+            org_id: None,
             retry_count: 0,
             max_retries: 3,
             tokens_used: 0,

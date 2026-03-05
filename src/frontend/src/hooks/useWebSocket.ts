@@ -1,5 +1,7 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { useStore } from '../lib/store'
+import toast from 'react-hot-toast'
+import { parseWsMessage, type WsServerMessage } from '../types'
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws'
 const RECONNECT_DELAY = 3000
@@ -7,11 +9,6 @@ const MAX_RECONNECT_ATTEMPTS = 10
 const SESSION_STORAGE_KEY = 'apex_ws_session_id'
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
-
-interface WsMessage {
-  type: string
-  [key: string]: unknown
-}
 
 /**
  * Maps a backend AgentStatusUpdate value to the frontend store status.
@@ -48,20 +45,31 @@ export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectAttempts = useRef(0)
   const reconnectTimeout = useRef<NodeJS.Timeout>()
-  const connectionState = useRef<ConnectionState>('disconnected')
+
+  // FIX Issue #1: Use useState instead of useRef for reactive connection state
+  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
 
   const { setWsConnected, setAgent, setTask, setMetrics, addApproval } = useStore()
 
   const handleMessage = useCallback(
     (event: MessageEvent) => {
       try {
-        const data = JSON.parse(event.data) as WsMessage
+        const rawData = JSON.parse(event.data)
 
+        // FIX Issue #4: Validate message using Zod before processing
+        const data = parseWsMessage(rawData)
+
+        if (!data) {
+          console.warn('[WS] Invalid message received, discarding')
+          return
+        }
+
+        // Process validated message
         switch (data.type) {
           // ── Connection lifecycle ──────────────────────────────────────
           case 'connected': {
             console.log('[WS] Connected to Apex')
-            const sessionId = data.session_id as string | undefined
+            const sessionId = data.session_id
             if (sessionId) {
               sessionStorage.setItem(SESSION_STORAGE_KEY, sessionId)
             }
@@ -81,55 +89,53 @@ export function useWebSocket() {
             break
 
           // ── Agent updates ────────────────────────────────────────────
-          // Backend serializes ServerMessage::AgentUpdate as "agent_update"
           case 'agent_update':
             setAgent({
-              id: data.agent_id as string,
-              name: data.name as string || 'Unknown',
-              model: (data.model as string) || 'unknown',
-              status: mapAgentStatus(data.status as string),
-              currentLoad: (data.current_load as number) || 0,
-              maxLoad: (data.max_load as number) || 10,
-              successRate: (data.success_rate as number) || 1,
-              reputationScore: (data.reputation_score as number) || 1,
-              totalTokens: (data.total_tokens as number) || 0,
-              totalCost: (data.total_cost as number) || 0,
-              confidence: data.confidence as number | undefined,
+              id: data.agent_id,
+              name: data.name || 'Unknown',
+              model: data.model || 'unknown',
+              status: mapAgentStatus(data.status || 'idle'),
+              currentLoad: data.current_load || 0,
+              maxLoad: data.max_load || 10,
+              successRate: data.success_rate || 1,
+              reputationScore: data.reputation_score || 1,
+              totalTokens: data.total_tokens || 0,
+              totalCost: data.total_cost || 0,
+              confidence: data.confidence,
             })
             break
 
           // ── Task updates ─────────────────────────────────────────────
           case 'task_update':
             setTask({
-              id: data.task_id as string,
-              dagId: (data.dag_id as string) || '',
-              name: (data.name as string) || 'Unknown Task',
-              status: mapTaskStatus(data.status as string),
-              agentId: data.agent_id as string | undefined,
-              tokensUsed: (data.tokens_used as number) || 0,
-              costDollars: (data.cost_dollars as number) || 0,
-              createdAt: (data.created_at as string) || (data.timestamp as string) || new Date().toISOString(),
-              startedAt: data.started_at as string | undefined,
-              completedAt: data.completed_at as string | undefined,
+              id: data.task_id,
+              dagId: data.dag_id || '',
+              name: data.name || 'Unknown Task',
+              status: mapTaskStatus(data.status || 'pending'),
+              agentId: data.agent_id,
+              tokensUsed: data.tokens_used || 0,
+              costDollars: data.cost_dollars || 0,
+              createdAt: data.created_at || data.timestamp || new Date().toISOString(),
+              startedAt: data.started_at,
+              completedAt: data.completed_at,
             })
             break
 
           // ── Metrics snapshot ─────────────────────────────────────────
-          // Backend sends ServerMessage::Metrics with nested agents/tasks/resources
           case 'metrics': {
-            const agents = data.agents as Record<string, number> | undefined
-            const tasks = data.tasks as Record<string, number> | undefined
-            const resources = data.resources as Record<string, number> | undefined
+            const agents = data.agents
+            const tasks = data.tasks
+            const resources = data.resources
             setMetrics({
-              totalAgents: agents?.total as number ?? 0,
-              activeAgents: agents?.active as number ?? 0,
-              runningTasks: tasks?.running as number ?? 0,
-              completedTasks: tasks?.completed_last_hour as number ?? 0,
-              failedTasks: tasks?.failed_last_hour as number ?? 0,
-              totalTokens: resources?.total_tokens_used as number ?? 0,
-              totalCost: resources?.total_cost_dollars as number ?? 0,
-              avgLatencyMs: tasks?.avg_duration_ms as number ?? 0,
-              successRate: agents?.avg_success_rate as number ?? 0,
+              totalAgents: agents?.total ?? 0,
+              activeAgents: agents?.active ?? 0,
+              runningTasks: tasks?.running ?? 0,
+              completedTasks: tasks?.completed_last_hour ?? 0,
+              failedTasks: tasks?.failed_last_hour ?? 0,
+              totalTokens: resources?.total_tokens_used ?? 0,
+              totalCost: resources?.total_cost_dollars ?? 0,
+              avgLatencyMs: tasks?.avg_duration_ms ?? 0,
+              successRate: agents?.avg_success_rate ?? 0,
             })
             break
           }
@@ -137,15 +143,22 @@ export function useWebSocket() {
           // ── Approval requests ────────────────────────────────────────
           case 'approval_required':
             addApproval({
-              id: data.request_id as string,
-              taskId: data.task_id as string,
-              agentId: data.agent_id as string,
-              actionType: data.approval_type as string,
-              actionData: data.details as Record<string, unknown> || {},
+              id: data.request_id,
+              taskId: data.task_id,
+              agentId: data.agent_id,
+              actionType: data.approval_type,
+              actionData: data.details || {},
               riskScore: 0,
               status: 'pending',
-              createdAt: (data.created_at as string) || new Date().toISOString(),
+              createdAt: data.created_at || new Date().toISOString(),
             })
+            // FIX Issue #6: Show toast notification for approval requests
+            toast.custom((t) => (
+              <div className={`bg-blue-600 text-white px-4 py-3 rounded-lg shadow-lg ${t.visible ? 'animate-enter' : 'animate-leave'}`}>
+                <span className="font-medium">Approval Required</span>
+                <span className="ml-2 text-blue-200">Task needs your attention</span>
+              </div>
+            ), { duration: 5000 })
             break
 
           // ── Keep-alive ───────────────────────────────────────────────
@@ -155,13 +168,14 @@ export function useWebSocket() {
           // ── Errors ───────────────────────────────────────────────────
           case 'error':
             console.error('[WS] Server error:', data.message || data.code)
+            // FIX Issue #6: Show toast notification for server errors
+            toast.error(data.message || 'Server error occurred', { id: 'ws-error' })
             break
-
-          default:
-            console.log('[WS] Unknown message type:', data.type)
         }
       } catch (error) {
         console.error('[WS] Failed to parse message:', error)
+        // FIX Issue #6: Show toast notification for parse errors
+        toast.error('Failed to process server message', { id: 'ws-parse-error' })
       }
     },
     [setAgent, setTask, setMetrics, addApproval]
@@ -173,13 +187,15 @@ export function useWebSocket() {
     }
 
     const isReconnect = reconnectAttempts.current > 0
-    connectionState.current = isReconnect ? 'reconnecting' : 'connecting'
+    // FIX Issue #1: Use useState setter for reactive updates
+    setConnectionState(isReconnect ? 'reconnecting' : 'connecting')
     console.log('[WS] Connecting to', WS_URL, isReconnect ? '(reconnect)' : '')
     const ws = new WebSocket(WS_URL)
 
     ws.onopen = () => {
       console.log('[WS] Connection established')
-      connectionState.current = 'connected'
+      // FIX Issue #1: Use useState setter for reactive updates
+      setConnectionState('connected')
       setWsConnected(true)
       reconnectAttempts.current = 0
 
@@ -204,7 +220,8 @@ export function useWebSocket() {
 
     ws.onclose = (event) => {
       console.log('[WS] Connection closed:', event.code, event.reason)
-      connectionState.current = 'disconnected'
+      // FIX Issue #1: Use useState setter for reactive updates
+      setConnectionState('disconnected')
       setWsConnected(false)
       wsRef.current = null
 
@@ -216,18 +233,22 @@ export function useWebSocket() {
         reconnectTimeout.current = setTimeout(connect, delay)
       } else {
         console.error('[WS] Max reconnection attempts reached')
+        // FIX Issue #6: Show toast notification for max reconnect attempts
+        toast.error('Connection lost. Please refresh the page.', { id: 'ws-reconnect-failed' })
       }
     }
 
     ws.onerror = (error) => {
       console.error('[WS] Error:', error)
+      // FIX Issue #6: Show toast notification for connection errors
+      toast.error('WebSocket connection error', { id: 'ws-error' })
     }
 
     wsRef.current = ws
   }, [handleMessage, setWsConnected])
 
   // Send message helper
-  const sendMessage = useCallback((message: WsMessage) => {
+  const sendMessage = useCallback((message: { type: string; [key: string]: unknown }) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(message))
     } else {
@@ -260,5 +281,10 @@ export function useWebSocket() {
     }
   }, [connect])
 
-  return { sendMessage, connectionState: connectionState.current }
+  // FIX Issue #1: Return function to get current state for reactivity, plus connectionState for direct access
+  return {
+    sendMessage,
+    connectionState,
+    getConnectionState: () => connectionState,
+  }
 }

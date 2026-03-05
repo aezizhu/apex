@@ -395,7 +395,7 @@ pub struct ApiKeyInfo {
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false, // Must be explicitly enabled
             jwt_secret: None,
             jwt_public_key: None,
             jwt_algorithm: Algorithm::HS256,
