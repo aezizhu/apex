@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Apex — Agent Swarm</title>
+    <meta name="description" content="Autonomous agent swarm powered by MiniMax-M2.5" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/style.css?v=15" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- ── Header ── -->
+      <header id="header">
+        <div class="header-left">
+          <div class="logo">
+            <svg width="24" height="24" viewBox="0 0 28 28" fill="none">
+              <path d="M14 2L26 8V20L14 26L2 20V8L14 2Z" stroke="url(#hg)" stroke-width="2" fill="none"/>
+              <path d="M14 8L20 11V17L14 20L8 17V11L14 8Z" fill="url(#hg)"/>
+              <defs><linearGradient id="hg" x1="2" y1="2" x2="26" y2="26"><stop stop-color="#5E6AD2"/><stop offset="1" stop-color="#8B94E8"/></linearGradient></defs>
+            </svg>
+          </div>
+          <div class="header-title">
+            <h1>Apex</h1>
+            <span class="subtitle">Agent Swarm</span>
+          </div>
+        </div>
+        <div class="header-right">
+          <div class="mode-switch" id="mode-switch">
+            <button class="mode-btn active" data-mode="swarm">Swarm</button>
+            <button class="mode-btn" data-mode="chat">Chat</button>
+          </div>
+        </div>
+      </header>
+
+      <!-- ── Swarm View (default) ── -->
+      <div id="swarm-view" class="swarm-view active">
+        <!-- Atmospheric blobs -->
+        <div class="swarm-atmosphere">
+          <div class="atmo-blob atmo-blob-1"></div>
+          <div class="atmo-blob atmo-blob-2"></div>
+          <div class="atmo-blob atmo-blob-3"></div>
+        </div>
+
+        <!-- Welcome screen — shown before any swarm starts -->
+        <div class="swarm-welcome" id="swarm-welcome">
+          <div class="swarm-welcome-inner">
+            <div class="swarm-welcome-icon">
+              <svg width="36" height="36" viewBox="0 0 28 28" fill="none">
+                <path d="M14 2L26 8V20L14 26L2 20V8L14 2Z" stroke="url(#swg)" stroke-width="1.5" fill="none"/>
+                <path d="M14 8L20 11V17L14 20L8 17V11L14 8Z" fill="url(#swg)"/>
+                <defs><linearGradient id="swg" x1="2" y1="2" x2="26" y2="26"><stop stop-color="#5E6AD2"/><stop offset="1" stop-color="#8B94E8"/></linearGradient></defs>
+              </svg>
+            </div>
+            <h2 class="swarm-welcome-title">Apex Swarm</h2>
+            <p class="swarm-welcome-desc">Research any topic with autonomous AI agents working in parallel.</p>
+            <div class="swarm-suggestions">
+              <button class="swarm-suggestion" data-query="What are the latest breakthroughs in quantum computing in 2026?">Quantum computing breakthroughs</button>
+              <button class="swarm-suggestion" data-query="Compare the economic policies and impacts of major world economies in 2026">Global economic analysis</button>
+              <button class="swarm-suggestion" data-query="What is the current state of artificial general intelligence research?">State of AGI research</button>
+              <button class="swarm-suggestion" data-query="Analyze the environmental impact and adoption rate of electric vehicles worldwide">Electric vehicle impact</button>
+            </div>
+
+            <!-- History section -->
+            <div class="swarm-history" id="swarm-history">
+              <div class="history-header">
+                <span class="history-label">Previous Reports</span>
+              </div>
+              <div class="history-list" id="history-list"></div>
+            </div>
+          </div>
+
+          <!-- Input bar (welcome state) -->
+          <div class="input-bar">
+            <div class="input-row">
+              <textarea id="swarm-query" placeholder="Describe what you want to research..." rows="1"></textarea>
+              <button id="swarm-stop-btn" class="stop-btn" style="display:none" title="Stop swarm">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="6" y="6" width="12" height="12" rx="1"/>
+                </svg>
+              </button>
+              <button id="swarm-send-btn" disabled>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dashboard — hidden until swarm starts -->
+        <div class="swarm-dashboard" id="swarm-dashboard" style="display:none">
+          <!-- Phase timeline bar -->
+          <div class="phase-bar" id="phase-indicator"></div>
+
+          <!-- Main 3-zone layout -->
+          <div class="swarm-layout">
+            <!-- LEFT SIDEBAR: Agent Roster -->
+            <aside class="sidebar-left" id="agent-panel">
+              <div class="panel-header">
+                <span class="panel-label">Agents</span>
+                <span class="agent-count" id="agent-count">0</span>
+              </div>
+              <div class="agents-list" id="agents-list"></div>
+            </aside>
+
+            <!-- CENTER: Stream Panel + Activity Feed -->
+            <div class="center-area">
+              <section class="stream-panel" id="stream-panel">
+                <div class="stream-header" id="stream-header">
+                  <div class="stream-agent-info">
+                    <span class="stream-agent-name" id="stream-agent-name">Waiting for agent...</span>
+                    <span class="stream-role-badge" id="stream-role-badge" style="display:none"></span>
+                  </div>
+                  <div class="stream-status" id="stream-status"></div>
+                </div>
+                <div class="stream-content" id="stream-content">
+                  <div class="stream-empty" id="stream-empty">
+                    <div class="stream-empty-icon">
+                      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                        <path d="M14 2L26 8V20L14 26L2 20V8L14 2Z" stroke="rgba(94,106,210,0.3)" stroke-width="1.5" fill="none"/>
+                        <path d="M14 8L20 11V17L14 20L8 17V11L14 8Z" fill="rgba(94,106,210,0.15)"/>
+                      </svg>
+                    </div>
+                    <span>Waiting for agent output...</span>
+                  </div>
+                  <pre class="stream-text" id="stream-text" style="display:none"></pre>
+                </div>
+              </section>
+
+              <section class="activity-panel">
+                <div class="panel-header">
+                  <span class="panel-label">Activity</span>
+                </div>
+                <div class="feed-scroll" id="activity-feed"></div>
+              </section>
+            </div>
+
+            <!-- RIGHT SIDEBAR: Report Output -->
+            <aside class="sidebar-right" id="output-panel">
+              <div class="panel-header">
+                <span class="panel-label">Report</span>
+              </div>
+              <div class="output-scroll" id="output-content">
+                <div class="output-empty">Report will appear here once the swarm completes.</div>
+              </div>
+            </aside>
+          </div>
+
+          <!-- Input bar (dashboard state) -->
+          <div class="input-bar">
+            <div class="input-row">
+              <textarea id="swarm-query-dash" placeholder="Start a new research..." rows="1"></textarea>
+              <button id="swarm-stop-btn-dash" class="stop-btn" style="display:none" title="Stop swarm">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="6" y="6" width="12" height="12" rx="1"/>
+                </svg>
+              </button>
+              <button id="swarm-send-btn-dash" disabled>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Report full-screen overlay -->
+        <div class="report-overlay" id="report-overlay">
+          <div class="report-overlay-bar">
+            <span class="report-overlay-title">Report</span>
+            <button class="report-overlay-close" id="report-overlay-close" title="Close">&times;</button>
+          </div>
+          <div class="report-overlay-content" id="report-overlay-content"></div>
+        </div>
+      </div>
+
+      <!-- ── Chat View (secondary) ── -->
+      <div id="chat-view" class="chat-view">
+        <main id="chat-container">
+          <div id="messages">
+            <div class="welcome" id="welcome">
+              <div class="welcome-icon">
+                <svg width="32" height="32" viewBox="0 0 28 28" fill="none">
+                  <path d="M14 2L26 8V20L14 26L2 20V8L14 2Z" stroke="url(#wg)" stroke-width="1.5" fill="none"/>
+                  <path d="M14 8L20 11V17L14 20L8 17V11L14 8Z" fill="url(#wg)"/>
+                  <defs><linearGradient id="wg" x1="2" y1="2" x2="26" y2="26"><stop stop-color="#5E6AD2"/><stop offset="1" stop-color="#8B94E8"/></linearGradient></defs>
+                </svg>
+              </div>
+              <h2>Apex Chat</h2>
+              <p>Direct conversation with <strong>MiniMax-M2.5</strong></p>
+              <div class="suggestions">
+                <button class="suggestion" data-msg="What makes MiniMax-M2.5 special compared to other AI models?">What makes M2.5 special?</button>
+                <button class="suggestion" data-msg="Write a Python async web scraper with error handling">Write a Python scraper</button>
+                <button class="suggestion" data-msg="Explain quantum computing in simple terms">Explain quantum computing</button>
+              </div>
+            </div>
+          </div>
+        </main>
+        <footer id="input-area">
+          <div class="input-row">
+            <textarea id="user-input" placeholder="Message Apex..." rows="1" autofocus></textarea>
+            <button id="send-btn" title="Send" disabled>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
+          </div>
+          <span class="input-hint">MiniMax-M2.5</span>
+        </footer>
+      </div>
+    </div>
+
+    <script src="/static/swarm.js?v=15"></script>
+    <script src="/static/app.js?v=15"></script>
+  </body>
+</html>

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+.DS_Store
+*.json
+!src/backend/core/swarm/report_templates/*.json
+data/
+.claude/
+*review*.md
+*_review_*
