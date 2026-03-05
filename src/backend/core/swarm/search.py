@@ -11,6 +11,28 @@ from ..config import FIRECRAWL_API_KEY, FIRECRAWL_BASE_URL
 
 logger = logging.getLogger("apex.swarm.search")
 
+# Shared HTTP client for connection pooling
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    """Get or create the shared HTTP client with connection pooling."""
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(
+            timeout=30.0,
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+        )
+    return _http_client
+
+
+async def _close_http_client() -> None:
+    """Close the shared HTTP client (call on shutdown)."""
+    global _http_client
+    if _http_client is not None:
+        await _http_client.aclose()
+        _http_client = None
+
 
 class WebSearchClient:
     """Async wrapper around the Firecrawl v1 search + scrape endpoints."""
@@ -24,8 +46,8 @@ class WebSearchClient:
     async def search(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         """Search the web and return results with scraped markdown content."""
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(
+            client = _get_http_client()
+            resp = await client.post(
                     f"{self._base}/v1/search",
                     headers=self._headers,
                     json={
@@ -52,8 +74,8 @@ class WebSearchClient:
     async def scrape(self, url: str) -> str:
         """Scrape a single URL and return markdown content."""
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(
+            client = _get_http_client()
+            resp = await client.post(
                     f"{self._base}/v1/scrape",
                     headers=self._headers,
                     json={"url": url, "formats": ["markdown"]},

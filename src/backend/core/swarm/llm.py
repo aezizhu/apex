@@ -15,6 +15,28 @@ from .roles import ROLE_CONFIGS
 
 logger = logging.getLogger("apex.swarm.llm")
 
+# Shared HTTP client for connection pooling
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    """Get or create the shared HTTP client with connection pooling."""
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(
+            timeout=120.0,
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+        )
+    return _http_client
+
+
+async def _close_http_client() -> None:
+    """Close the shared HTTP client (call on shutdown)."""
+    global _http_client
+    if _http_client is not None:
+        await _http_client.aclose()
+        _http_client = None
+
 # Simple rate-limit guard: minimum seconds between API calls
 _call_lock = asyncio.Lock()
 _MIN_CALL_GAP = 0.5
@@ -82,8 +104,8 @@ class LLMClient:
         payload = self._build_payload(messages, role, stream=False)
         for attempt in range(self.MAX_RETRIES + 1):
             await _rate_limit_wait()
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                resp = await client.post(self._url, json=payload, headers=self._headers)
+            client = _get_http_client()
+            resp = await client.post(self._url, json=payload, headers=self._headers)
                 if resp.status_code == 429 and attempt < self.MAX_RETRIES:
                     wait = self.BACKOFF_BASE * (2 ** attempt)
                     logger.warning("Rate limited (429), retrying in %ds (%d/%d)", wait, attempt + 1, self.MAX_RETRIES)
@@ -113,8 +135,8 @@ class LLMClient:
             await _rate_limit_wait()
 
             retry = False
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                async with client.stream(
+            client = _get_http_client()
+            async with client.stream(
                     "POST", self._url, json=payload, headers=self._headers
                 ) as resp:
                     if resp.status_code in (429, 529) and attempt < self.MAX_RETRIES:
