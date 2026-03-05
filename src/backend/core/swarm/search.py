@@ -7,23 +7,27 @@ from typing import Any
 
 import httpx
 
-from ..config import FIRECRAWL_BASE_URL
+from ..config import FIRECRAWL_API_KEY, FIRECRAWL_BASE_URL
 
 logger = logging.getLogger("apex.swarm.search")
 
 
 class WebSearchClient:
-    """Async wrapper around the Firecrawl v2 search + scrape endpoints."""
+    """Async wrapper around the Firecrawl v1 search + scrape endpoints."""
 
     def __init__(self) -> None:
         self._base = FIRECRAWL_BASE_URL
+        self._headers: dict[str, str] = {"Content-Type": "application/json"}
+        if FIRECRAWL_API_KEY:
+            self._headers["Authorization"] = f"Bearer {FIRECRAWL_API_KEY}"
 
     async def search(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         """Search the web and return results with scraped markdown content."""
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(
-                    f"{self._base}/v2/search",
+                    f"{self._base}/v1/search",
+                    headers=self._headers,
                     json={
                         "query": query,
                         "limit": limit,
@@ -50,7 +54,8 @@ class WebSearchClient:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(
-                    f"{self._base}/v2/scrape",
+                    f"{self._base}/v1/scrape",
+                    headers=self._headers,
                     json={"url": url, "formats": ["markdown"]},
                 )
                 if resp.status_code != 200:
