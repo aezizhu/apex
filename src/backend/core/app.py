@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import AsyncGenerator
 
 import httpx
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import (
@@ -31,6 +32,11 @@ from .swarm import (
 )
 
 logger = logging.getLogger("apex")
+
+
+def _validate_report_id(report_id: str) -> bool:
+    """Return True if report_id is a safe hex string."""
+    return re.fullmatch(r'[a-f0-9]+', report_id) is not None
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -164,8 +170,10 @@ async def swarm_history() -> list[dict]:
 
 
 @app.get("/api/swarm/history/{report_id}")
-async def swarm_history_detail(report_id: str) -> dict:
+async def swarm_history_detail(report_id: str) -> JSONResponse | dict:
     """Get a single completed swarm report, including rendered HTML if available."""
+    if not _validate_report_id(report_id):
+        return JSONResponse(status_code=404, content={"error": "report not found"})
     path = REPORTS_DIR / f"{report_id}.json"
     if not path.exists():
         return {"error": "report not found"}
@@ -183,6 +191,11 @@ async def swarm_history_detail(report_id: str) -> dict:
 @app.get("/api/swarm/report/{report_id}/html", response_class=HTMLResponse)
 async def swarm_report_html(report_id: str) -> HTMLResponse:
     """Serve a rendered HTML report by ID."""
+    if not _validate_report_id(report_id):
+        return HTMLResponse(
+            content="<h1>Report not found</h1><p>No HTML report available for this ID.</p>",
+            status_code=404,
+        )
     html_path = REPORTS_DIR / f"{report_id}.html"
     if not html_path.exists():
         return HTMLResponse(
