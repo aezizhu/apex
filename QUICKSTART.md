@@ -5,7 +5,7 @@ Get up and running in 2 minutes.
 ## Prerequisites
 
 - Python 3.11+
-- A MiniMax API key
+- An Anthropic API key
 
 ## 1. Install
 
@@ -21,10 +21,10 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` and add your MiniMax API key:
+Edit `.env` and add your Anthropic API key:
 
 ```
-MINIMAX_API_KEY=your-key-here
+ANTHROPIC_API_KEY=your-key-here
 ```
 
 ## 3. Run
@@ -38,7 +38,7 @@ Open **http://localhost:8000** in your browser.
 ## 4. Try It
 
 - **Swarm mode** (default): Enter a research topic and watch agents work in parallel
-- **Chat mode**: Click "Chat" in the header for direct conversation with MiniMax-M2.5
+- **Chat mode**: Click "Chat" in the header for direct conversation with Claude
 
 ## Optional: Docker
 
@@ -51,7 +51,7 @@ docker run -p 8000:8000 --env-file .env apex
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MINIMAX_API_KEY` | (required) | MiniMax API key |
+| `ANTHROPIC_API_KEY` | (required) | Anthropic API key |
 | `FIRECRAWL_BASE_URL` | `https://api-production-91c7.up.railway.app` | Web search API |
 | `APEX_HOST` | `0.0.0.0` | Bind address |
 | `APEX_PORT` | `8000` | Port |
@@ -60,12 +60,12 @@ docker run -p 8000:8000 --env-file .env apex
 ## Troubleshooting
 
 ### App won't start?
-- Check that `MINIMAX_API_KEY` is set in `.env`
+- Check that `ANTHROPIC_API_KEY` is set in `.env`
 - Ensure Python 3.11+ is installed: `python --version`
 
 ### Swarm produces errors?
 - Check the terminal for log output
-- Verify your MiniMax API key is valid
+- Verify your Anthropic API key is valid
 - The Firecrawl search API must be reachable
 
 ## Next Steps
