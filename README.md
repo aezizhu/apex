@@ -5,7 +5,7 @@
 <p><strong>Autonomous Agent Swarm for Deep Research</strong></p>
 
 <p>
-A multi-agent research pipeline powered by MiniMax-M2.5 with real-time visualization.<br/>
+A multi-agent research pipeline powered by Claude with real-time visualization.<br/>
 Agents plan, research, analyze, fact-check, and write comprehensive reports autonomously.
 </p>
 
@@ -19,7 +19,7 @@ Agents plan, research, analyze, fact-check, and write comprehensive reports auto
 - **Live Web Research** — Agents search the web via Firecrawl API, with reflection cycles to fill gaps
 - **Real-Time Dashboard** — WebSocket-powered UI shows agent activity, streaming output, and progress
 - **Rich Report Generation** — Multi-stage report engine with templates, structured IR, and HTML rendering
-- **Direct Chat** — Also supports direct conversation with MiniMax-M2.5
+- **Direct Chat** — Also supports direct conversation with Claude
 
 ## Architecture
 
@@ -35,8 +35,8 @@ Browser (HTML/JS/CSS)
          │              │              │
     SwarmEngine    LLMClient    WebSearchClient
          │              │              │
-    Multi-agent    MiniMax API    Firecrawl API
-    pipeline       (M2.5)        (web search)
+    Multi-agent    Claude API     Firecrawl API
+    pipeline       (Anthropic)   (web search)
 ```
 
 ## Quick Start
@@ -44,7 +44,7 @@ Browser (HTML/JS/CSS)
 ### Prerequisites
 
 - Python 3.11+
-- A [MiniMax API key](https://www.minimaxi.com/)
+- An [Anthropic API key](https://console.anthropic.com/)
 
 ### Setup
 
@@ -58,7 +58,7 @@ pip install -r requirements.txt
 
 # Configure your API key
 cp .env.example .env
-# Edit .env and add your MINIMAX_API_KEY
+# Edit .env and add your ANTHROPIC_API_KEY
 ```
 
 ### Run
@@ -73,7 +73,7 @@ The app starts at **http://localhost:8000**.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MINIMAX_API_KEY` | (required) | Your MiniMax API key |
+| `ANTHROPIC_API_KEY` | (required) | Your Anthropic API key |
 | `FIRECRAWL_BASE_URL` | `https://api-production-91c7.up.railway.app` | Firecrawl search API URL |
 | `APEX_HOST` | `0.0.0.0` | Server bind address |
 | `APEX_PORT` | `8000` | Server port |
@@ -109,7 +109,7 @@ src/backend/core/
 │   └── style.css
 └── swarm/
     ├── engine.py        # Swarm pipeline orchestrator
-    ├── llm.py           # MiniMax API client
+    ├── llm.py           # Claude API client
     ├── search.py        # Firecrawl web search client
     ├── models.py        # Data models
     ├── events.py        # WebSocket event emitter
