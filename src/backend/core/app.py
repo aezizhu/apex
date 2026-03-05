@@ -77,6 +77,9 @@ async def chat(request: Request) -> StreamingResponse:
     body = await request.json()
     messages: list[dict] = body.get("messages", [])
 
+    if not messages:
+        return JSONResponse(status_code=400, content={"error": "messages is required"})
+
     # Extract system message for Anthropic format
     system_prompt = ""
     anthropic_msgs = []
@@ -85,6 +88,9 @@ async def chat(request: Request) -> StreamingResponse:
             system_prompt = msg["content"]
         else:
             anthropic_msgs.append({"role": msg["role"], "content": msg["content"]})
+
+    if not anthropic_msgs:
+        return JSONResponse(status_code=400, content={"error": "at least one user message is required"})
 
     payload: dict = {
         "model": MODEL_NAME,
