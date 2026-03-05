@@ -30,53 +30,7 @@
     chapter_writing: 'Chapters', stitching: 'Stitching', rendering: 'Rendering'
   };
 
-  // NOTE: escapeHtml is called before any HTML transforms in renderMarkdown,
-  // ensuring user-provided text is sanitized before being inserted into the DOM.
-  function escapeHtml(str) {
-    const d = document.createElement("div");
-    d.textContent = str;
-    return d.innerHTML;
-  }
-
-  // renderMarkdown escapes ALL input via escapeHtml first, then applies
-  // safe formatting transforms on the already-escaped string.
-  function renderMarkdown(text) {
-    if (!text) return "";
-    let h = escapeHtml(text);
-    h = h.replace(/```(\w*)\n([\s\S]*?)```/g, (_, l, c) => `<pre><code class="language-${l}">${c.trim()}</code></pre>`);
-    h = h.replace(/`([^`]+)`/g, "<code>$1</code>");
-    // Tables: consecutive lines starting/ending with |
-    h = h.replace(/(^\|.+\|[ \t]*$\n?)+/gm, function(block) {
-      const rows = block.trim().split('\n');
-      if (rows.length < 2) return block;
-      if (!/^\|[\s\-:]+\|$/.test(rows[1])) return block;
-      const pr = (r) => r.split('|').slice(1, -1).map(c => c.trim());
-      const hds = pr(rows[0]);
-      let t = '<table><thead><tr>' + hds.map(c => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>';
-      for (let i = 2; i < rows.length; i++) {
-        const cells = pr(rows[i]);
-        t += '<tr>' + cells.map(c => '<td>' + c + '</td>').join('') + '</tr>';
-      }
-      return t + '</tbody></table>';
-    });
-    // Blockquotes (> is escaped to &gt; by escapeHtml)
-    h = h.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-    h = h.replace(/<\/blockquote>\n<blockquote>/g, '<br/>');
-    // Horizontal rules
-    h = h.replace(/^-{3,}$/gm, '<hr/>');
-    h = h.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    h = h.replace(/\*(.+?)\*/g, "<em>$1</em>");
-    h = h.replace(/^### (.+)$/gm, "<h4>$1</h4>");
-    h = h.replace(/^## (.+)$/gm, "<h3>$1</h3>");
-    h = h.replace(/^# (.+)$/gm, "<h2>$1</h2>");
-    h = h.replace(/^\s*[-*] (.+)$/gm, "<li>$1</li>");
-    h = h.replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`);
-    h = h.replace(/^\s*\d+\. (.+)$/gm, "<li>$1</li>");
-    h = h.replace(/\n\n/g, "</p><p>");
-    h = h.replace(/\n/g, "<br/>");
-    if (!h.startsWith("<")) h = `<p>${h}</p>`;
-    return h;
-  }
+  // escapeHtml and renderMarkdown are provided by utils.js (loaded before this script)
 
   // ── WebSocket client ──
   class SwarmClient {
