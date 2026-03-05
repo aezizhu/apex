@@ -47,6 +47,7 @@ app = FastAPI(title="Apex — MiniMax-M2.5")
 # Swarm globals
 # ---------------------------------------------------------------------------
 swarm_sessions: dict[str, SwarmSession] = {}
+swarm_tasks: dict[str, asyncio.Task] = {}
 event_emitter = EventEmitter()
 llm_client = LLMClient()
 
@@ -122,12 +123,12 @@ async def chat(request: Request) -> StreamingResponse:
 
 
 @app.post("/api/swarm/start")
-async def swarm_start(request: Request) -> dict:
+async def swarm_start(request: Request) -> JSONResponse:
     """Launch a new swarm session for the given query."""
     body = await request.json()
     query: str = body.get("query", "")
     if not query:
-        return {"error": "query is required"}
+        return JSONResponse(status_code=400, content={"error": "query is required"})
 
     session = SwarmSession(id=uuid.uuid4().hex[:12], query=query)
     swarm_sessions[session.id] = session
@@ -135,20 +136,31 @@ async def swarm_start(request: Request) -> dict:
     bus = MessageBus(session)
     engine = SwarmEngine(session, bus, event_emitter, llm_client)
 
-    asyncio.create_task(engine.run(query))
+    async def _run_and_cleanup() -> None:
+        try:
+            await engine.run(query)
+        finally:
+            swarm_sessions.pop(session.id, None)
+            swarm_tasks.pop(session.id, None)
 
-    return {"session_id": session.id}
+    task = asyncio.create_task(_run_and_cleanup())
+    swarm_tasks[session.id] = task
+
+    return JSONResponse(content={"session_id": session.id})
 
 
 @app.post("/api/swarm/{session_id}/stop")
-async def swarm_stop(session_id: str) -> dict:
+async def swarm_stop(session_id: str) -> JSONResponse:
     """Cancel a running swarm session."""
     session = swarm_sessions.get(session_id)
     if session is None:
-        return {"error": "session not found"}
+        return JSONResponse(status_code=404, content={"error": "session not found"})
     session.cancelled = True
+    task = swarm_tasks.get(session_id)
+    if task is not None:
+        task.cancel()
     await event_emitter.emit(session_id, "swarm_cancelled", {"message": "Swarm stopped by user"})
-    return {"status": "stopped"}
+    return JSONResponse(content={"status": "stopped"})
 
 
 @app.get("/api/swarm/history")
@@ -171,22 +183,22 @@ async def swarm_history() -> list[dict]:
 
 
 @app.get("/api/swarm/history/{report_id}")
-async def swarm_history_detail(report_id: str) -> JSONResponse | dict:
+async def swarm_history_detail(report_id: str) -> JSONResponse:
     """Get a single completed swarm report, including rendered HTML if available."""
     if not _validate_report_id(report_id):
         return JSONResponse(status_code=404, content={"error": "report not found"})
     path = REPORTS_DIR / f"{report_id}.json"
     if not path.exists():
-        return {"error": "report not found"}
+        return JSONResponse(status_code=404, content={"error": "report not found"})
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         # Attach rendered HTML from companion file if it exists
         html_path = REPORTS_DIR / f"{report_id}.html"
         if html_path.exists():
             data["report_html"] = html_path.read_text(encoding="utf-8")
-        return data
+        return JSONResponse(content=data)
     except Exception as exc:
-        return {"error": str(exc)}
+        return JSONResponse(status_code=500, content={"error": str(exc)})
 
 
 @app.get("/api/swarm/report/{report_id}/html", response_class=HTMLResponse)
