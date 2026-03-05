@@ -658,45 +658,48 @@ class SwarmEngine:
     async def run(self, query: str) -> None:
         """Execute the full swarm pipeline."""
         try:
-            # Pre-check: reject trivially non-research queries before wasting LLM calls
-            trivial_err = self._is_trivial_query(query)
-            if trivial_err:
-                await self._emit("error", {"message": trivial_err})
-                await self._emit("swarm_complete", {"report": ""})
-                return
+            try:
+                # Pre-check: reject trivially non-research queries before wasting LLM calls
+                trivial_err = self._is_trivial_query(query)
+                if trivial_err:
+                    await self._emit("error", {"message": trivial_err})
+                    await self._emit("swarm_complete", {"report": ""})
+                    return
 
-            # 1. Planning — coordinator produces title, sections, and tasks
-            plan = await self._planning(query)
-            if not plan:
-                await self._emit("swarm_complete", {"report": ""})
-                return
+                # 1. Planning — coordinator produces title, sections, and tasks
+                plan = await self._planning(query)
+                if not plan:
+                    await self._emit("swarm_complete", {"report": ""})
+                    return
 
-            # 2. Researching — parallel web search + analysis with section context
-            research_results = await self._researching(plan)
+                # 2. Researching — parallel web search + analysis with section context
+                research_results = await self._researching(plan)
 
-            # 3. Analyzing — synthesize with report outline
-            analysis = await self._analyzing(research_results, plan)
+                # 3. Analyzing — synthesize with report outline
+                analysis = await self._analyzing(research_results, plan)
 
-            # 4. Fact-checking — verify against original research data
-            fact_check = await self._fact_checking(analysis, research_results)
+                # 4. Fact-checking — verify against original research data
+                fact_check = await self._fact_checking(analysis, research_results)
 
-            # 5. Writing — multi-stage report pipeline (with fallback)
-            final, doc_ir, report_html = await self._writing(
-                query, plan, research_results, analysis, fact_check,
-            )
+                # 5. Writing — multi-stage report pipeline (with fallback)
+                final, doc_ir, report_html = await self._writing(
+                    query, plan, research_results, analysis, fact_check,
+                )
 
-            # 6. Complete
-            self.session.phase = SwarmPhase.COMPLETE
-            self.session.final_output = final
-            self._save_report(query, final, doc_ir=doc_ir, report_html=report_html)
+                # 6. Complete
+                self.session.phase = SwarmPhase.COMPLETE
+                self.session.final_output = final
+                self._save_report(query, final, doc_ir=doc_ir, report_html=report_html)
 
-            complete_data: dict[str, Any] = {"report": final}
-            if report_html:
-                complete_data["report_html"] = report_html
-            await self._emit("swarm_complete", complete_data)
+                complete_data: dict[str, Any] = {"report": final}
+                if report_html:
+                    complete_data["report_html"] = report_html
+                await self._emit("swarm_complete", complete_data)
 
-        except asyncio.CancelledError:
-            logger.info("Swarm cancelled for session %s", self.session.id)
-        except Exception as exc:
-            logger.exception("Swarm pipeline error")
-            await self._emit("error", {"message": str(exc)})
+            except asyncio.CancelledError:
+                logger.info("Swarm cancelled for session %s", self.session.id)
+            except Exception as exc:
+                logger.exception("Swarm pipeline error")
+                await self._emit("error", {"message": str(exc)})
+        finally:
+            self.emitter.clear_buffer(self.session.id)
