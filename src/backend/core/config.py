@@ -28,7 +28,8 @@ SWARM_DEFAULTS = {
 }
 
 # Firecrawl web search API
-FIRECRAWL_BASE_URL = os.getenv("FIRECRAWL_BASE_URL", "https://api-production-91c7.up.railway.app")
+FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY", "")
+FIRECRAWL_BASE_URL = os.getenv("FIRECRAWL_BASE_URL", "https://api.firecrawl.dev")
 
 # Persistent storage for completed swarm reports
 DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
