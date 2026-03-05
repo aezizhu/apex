@@ -430,6 +430,8 @@ export default function Dashboard() {
   const [missionActive, setMissionActive] = useState(false)
   const pollRef = useRef<NodeJS.Timeout>()
 
+  // FIX Issue #5: Remove duplicate data fetching - useInitialData already fetches this data
+  // Only fetch on-demand when user explicitly needs fresh data (e.g., after launching a mission)
   const refreshData = useCallback(async () => {
     try {
       const [agentsRes, tasksRes, metricsRes] = await Promise.allSettled([
@@ -437,26 +439,34 @@ export default function Dashboard() {
         taskApi.list({ pageSize: 200 }),
         metricsApi.getSystem(),
       ])
+      let hasError = false
       if (agentsRes.status === 'fulfilled' && Array.isArray(agentsRes.value.data)) {
         setAgents(agentsRes.value.data)
+      } else {
+        hasError = true
       }
       if (tasksRes.status === 'fulfilled' && Array.isArray(tasksRes.value.data)) {
         setTasks(tasksRes.value.data)
+      } else {
+        hasError = true
       }
       if (metricsRes.status === 'fulfilled' && metricsRes.value.data) {
         setMetrics(metricsRes.value.data)
+      } else {
+        hasError = true
+      }
+      // FIX Issue #6: Show toast notification for refresh errors
+      if (hasError) {
+        toast.error('Failed to refresh data')
       }
     } catch {
-      // Silently handle errors; data may still arrive via WebSocket
+      // FIX Issue #6: Show toast notification for errors
+      toast.error('Failed to refresh data')
     }
   }, [setAgents, setTasks, setMetrics])
 
-  // Initial fetch
-  useEffect(() => {
-    refreshData()
-  }, [refreshData])
-
-  // Poll every 3s when a mission is active (backup for WebSocket)
+  // FIX Issue #5: Removed initial fetch - useInitialData in App.tsx handles this
+  // Only poll when a mission is active (backup for WebSocket)
   useEffect(() => {
     if (missionActive) {
       pollRef.current = setInterval(refreshData, 3000)
