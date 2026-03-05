@@ -180,6 +180,8 @@ async def swarm_start(request: Request) -> JSONResponse:
         try:
             await engine.run(query)
         finally:
+            # Give WebSocket clients time to drain final events before cleanup
+            await asyncio.sleep(2)
             swarm_sessions.pop(session.id, None)
             swarm_tasks.pop(session.id, None)
 
