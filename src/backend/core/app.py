@@ -32,6 +32,8 @@ from .swarm import (
     SwarmEngine,
     SwarmSession,
 )
+from .swarm.llm import _close_http_client as _close_llm_client
+from .swarm.search import _close_http_client as _close_search_client
 
 logger = logging.getLogger("apex")
 
@@ -65,6 +67,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if _chat_http_client is not None:
         await _chat_http_client.aclose()
         _chat_http_client = None
+    await _close_llm_client()
+    await _close_search_client()
 
 
 STATIC_DIR = Path(__file__).parent / "static"
