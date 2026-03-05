@@ -13,6 +13,7 @@ from typing import AsyncGenerator
 import httpx
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import (
@@ -42,6 +43,14 @@ def _validate_report_id(report_id: str) -> bool:
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="Apex — MiniMax-M2.5")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ---------------------------------------------------------------------------
 # Swarm globals
