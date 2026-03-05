@@ -42,6 +42,10 @@ pub struct ServerConfig {
     /// gRPC server port
     #[serde(default = "default_grpc_port")]
     pub grpc_port: u16,
+
+    /// Allowed CORS origins (empty or "*" = allow any, otherwise specific origins)
+    #[serde(default = "default_allowed_origins")]
+    pub allowed_origins: Vec<String>,
 }
 
 impl Default for ServerConfig {
@@ -50,6 +54,7 @@ impl Default for ServerConfig {
             host: default_host(),
             port: default_port(),
             grpc_port: default_grpc_port(),
+            allowed_origins: default_allowed_origins(),
         }
     }
 }
@@ -179,6 +184,7 @@ impl Default for LlmConfig {
 fn default_host() -> String { "0.0.0.0".to_string() }
 fn default_port() -> u16 { 8080 }
 fn default_grpc_port() -> u16 { 50051 }
+fn default_allowed_origins() -> Vec<String> { vec![] }
 fn default_max_connections() -> u32 { 20 }
 fn default_min_connections() -> u32 { 5 }
 fn default_redis_url() -> String { "redis://localhost:6379".to_string() }

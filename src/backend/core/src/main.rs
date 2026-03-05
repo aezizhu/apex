@@ -22,14 +22,16 @@ async fn main() -> anyhow::Result<()> {
     // Load environment variables
     dotenvy::dotenv().ok();
 
-    // Load configuration
+    // Load configuration - fail if DATABASE_URL is not provided
     let config = Config::load().unwrap_or_else(|e| {
         eprintln!("Warning: Could not load config: {}. Using defaults.", e);
+        let db_url = std::env::var("DATABASE_URL").expect(
+            "DATABASE_URL must be provided. Set it via environment variable or config file."
+        );
         Config {
             server: Default::default(),
             database: apex_core::config::DatabaseConfig {
-                url: std::env::var("DATABASE_URL")
-                    .unwrap_or_else(|_| "postgres://apex:apex_secret@localhost:5432/apex".to_string()),
+                url: db_url,
                 max_connections: 20,
                 min_connections: 5,
             },
@@ -109,6 +111,7 @@ async fn main() -> anyhow::Result<()> {
         db,
         plugin_registry,
         delegation_manager,
+        allowed_origins: config.server.allowed_origins,
     };
 
     // Build router
