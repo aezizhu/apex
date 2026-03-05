@@ -3,6 +3,10 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # MiniMax API
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
 
@@ -18,7 +22,7 @@ SWARM_DEFAULTS = {
 }
 
 # Firecrawl web search API
-FIRECRAWL_BASE_URL = "https://api-production-91c7.up.railway.app"
+FIRECRAWL_BASE_URL = os.getenv("FIRECRAWL_BASE_URL", "https://api-production-91c7.up.railway.app")
 
 # Persistent storage for completed swarm reports
 DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
