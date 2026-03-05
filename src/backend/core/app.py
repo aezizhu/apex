@@ -15,6 +15,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 
 from .config import (
     ANTHROPIC_API_KEY,
@@ -34,15 +35,41 @@ from .swarm import (
 
 logger = logging.getLogger("apex")
 
+# Shared HTTP client for connection pooling (used by /api/chat)
+_chat_http_client: httpx.AsyncClient | None = None
+
+
+def _get_chat_http_client() -> httpx.AsyncClient:
+    """Get or create the shared HTTP client for chat endpoint."""
+    global _chat_http_client
+    if _chat_http_client is None:
+        _chat_http_client = httpx.AsyncClient(
+            timeout=120.0,
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+        )
+    return _chat_http_client
+
 
 def _validate_report_id(report_id: str) -> bool:
     """Return True if report_id is a safe hex string."""
     return re.fullmatch(r'[a-f0-9]+', report_id) is not None
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Manage application lifecycle - startup and shutdown."""
+    # Startup: nothing to do, clients are created lazily
+    yield
+    # Shutdown: close shared HTTP clients
+    global _chat_http_client
+    if _chat_http_client is not None:
+        await _chat_http_client.aclose()
+        _chat_http_client = None
+
+
 STATIC_DIR = Path(__file__).parent / "static"
 
-app = FastAPI(title="Apex — Claude Agent Swarm")
+app = FastAPI(title="Apex — Claude Agent Swarm", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -109,7 +136,8 @@ async def chat(request: Request) -> StreamingResponse:
     }
 
     async def event_stream() -> AsyncGenerator[str, None]:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        try:
+            client = _get_chat_http_client()
             async with client.stream(
                 "POST",
                 f"{ANTHROPIC_BASE_URL}/messages",
@@ -146,6 +174,9 @@ async def chat(request: Request) -> StreamingResponse:
                                 break
                         except json.JSONDecodeError:
                             continue
+        except Exception as exc:
+            logger.exception("Chat stream failed: %s", exc)
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
     return StreamingResponse(
         event_stream(),
