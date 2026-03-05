@@ -75,7 +75,7 @@ impl Default for WebSocketConfig {
             enable_compression: true,
             max_reconnection_attempts: 5,
             reconnection_backoff_ms: 1000,
-            jwt_secret: "change-me-in-production".to_string(),
+            jwt_secret: String::new(), // Must be configured via environment
             token_expiration_secs: 3600,
         }
     }

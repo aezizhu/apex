@@ -81,7 +81,14 @@ async fn handle_socket(socket: WebSocket, params: WsQueryParams, _app_state: App
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let (tx, mut rx) = mpsc::channel::<ServerMessage>(CHANNEL_CAPACITY);
 
-    let ws_config = WebSocketConfig::default();
+    // Load JWT secret from environment - fail if not configured
+    let jwt_secret = std::env::var("JWT_SECRET")
+        .expect("JWT_SECRET must be set for WebSocket authentication");
+
+    let ws_config = WebSocketConfig {
+        jwt_secret,
+        ..Default::default()
+    };
     let ws_state = Arc::new(WebSocketState::new(ws_config.clone()));
 
     let mut connection = WebSocketConnection::new(tx.clone());

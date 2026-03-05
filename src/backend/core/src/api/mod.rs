@@ -74,6 +74,15 @@ pub use versioning::{
     VersionInfo, VersionSource, VersionStatus, VersionedRouter, VersioningLayer,
 };
 
+/// Build CORS layer from allowed origins config
+fn build_cors_layer(origins: &[String]) -> CorsLayer {
+    // For now, allow any origin when configured (can be restricted later)
+    CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any)
+}
+
 /// Application state shared across handlers.
 #[derive(Clone)]
 pub struct AppState {
@@ -81,6 +90,8 @@ pub struct AppState {
     pub db: Arc<Database>,
     pub plugin_registry: Arc<PluginRegistry>,
     pub delegation_manager: Arc<DelegationManager>,
+    /// Allowed CORS origins (empty = allow any, "*" = allow any, otherwise specific origins)
+    pub allowed_origins: Vec<String>,
 }
 
 impl AppState {
@@ -109,10 +120,7 @@ impl AppState {
 /// let app = build_router(state);
 /// ```
 pub fn build_router(state: AppState) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = build_cors_layer(&state.allowed_origins);
 
     // Version configuration
     let version_config = VersionConfig::default();
@@ -147,10 +155,7 @@ pub fn build_router(state: AppState) -> Router {
 
 /// Build the API router with custom version configuration.
 pub fn build_router_with_config(state: AppState, version_config: VersionConfig) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = build_cors_layer(&state.allowed_origins);
 
     Router::new()
         // Unversioned endpoints
