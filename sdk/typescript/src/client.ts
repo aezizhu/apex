@@ -57,6 +57,8 @@ import {
   ApprovalFilter,
   CreateApprovalRequest,
   ApprovalResponse,
+  // WebSocket types
+  WebSocketEventType,
 } from './types';
 import {
   ApexError,
@@ -164,7 +166,8 @@ export class ApexClient {
     client.interceptors.request.use(
       (config: InternalAxiosRequestConfig) => {
         if (this.config.apiKey) {
-          config.headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+          // Use X-API-Key header to match Python SDK for compatibility
+          config.headers['X-API-Key'] = this.config.apiKey;
         }
         return config;
       },
@@ -839,7 +842,7 @@ export class ApexClient {
 
       try {
         return await ws.waitFor<Task>(
-          'task.completed' as never,
+          WebSocketEventType.TASK_COMPLETED,
           (task: Task) => task.id === taskId,
           timeout
         );

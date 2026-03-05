@@ -17,6 +17,7 @@ class TaskStatus(str, Enum):
     QUEUED = "queued"
     RUNNING = "running"
     PAUSED = "paused"
+    WAITING_APPROVAL = "waiting_approval"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -40,9 +41,21 @@ class AgentStatus(str, Enum):
     ERROR = "error"
 
 
+class AgentStats(ApexBaseModel):
+    """Agent statistics."""
+
+    total_tasks_completed: int = Field(default=0, alias="totalTasksCompleted")
+    total_tasks_failed: int = Field(default=0, alias="totalTasksFailed")
+    total_uptime_seconds: int = Field(default=0, alias="totalUptimeSeconds")
+    average_task_duration: float = Field(default=0.0, alias="averageTaskDuration")
+    last_task_completed_at: datetime | None = Field(default=None, alias="lastTaskCompletedAt")
+
+
 class DAGStatus(str, Enum):
     """DAG execution status."""
 
+    DRAFT = "draft"
+    ACTIVE = "active"
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -184,6 +197,18 @@ class Task(TimestampedModel):
     depends_on: list[str] = Field(default_factory=list, alias="dependsOn")
     started_at: datetime | None = Field(default=None, alias="startedAt")
     completed_at: datetime | None = Field(default=None, alias="completedAt")
+    parent_task_id: str | None = Field(default=None, alias="parentTaskId")
+
+
+class TaskLog(ApexBaseModel):
+    """Task log entry."""
+
+    id: str
+    task_id: str = Field(alias="taskId")
+    level: str
+    message: str
+    timestamp: datetime
+    metadata: dict[str, Any] | None = None
 
 
 # Agent Models
@@ -234,6 +259,7 @@ class Agent(TimestampedModel):
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     last_heartbeat: datetime | None = Field(default=None, alias="lastHeartbeat")
+    stats: AgentStats | None = None
 
 
 # DAG Models
@@ -247,6 +273,9 @@ class DAGNode(ApexBaseModel):
     depends_on: list[str] = Field(default_factory=list, alias="dependsOn")
     condition: str | None = None
     retry_policy: dict[str, Any] | None = Field(default=None, alias="retryPolicy")
+    type: str | None = None
+    status: TaskStatus | None = None
+    task_id: str | None = Field(default=None, alias="taskId")
 
 
 class DAGEdge(ApexBaseModel):
@@ -292,6 +321,34 @@ class DAGTaskStatus(ApexBaseModel):
     completed_at: datetime | None = Field(default=None, alias="completedAt")
 
 
+class DAGNodeExecution(ApexBaseModel):
+    """Execution status of a single node within a DAG execution."""
+
+    node_id: str = Field(alias="nodeId")
+    task_id: str | None = Field(default=None, alias="taskId")
+    status: TaskStatus
+    started_at: datetime | None = Field(default=None, alias="startedAt")
+    completed_at: datetime | None = Field(default=None, alias="completedAt")
+    input: dict[str, Any] | None = None
+    output: dict[str, Any] | None = None
+    error: TaskError | None = None
+
+
+class DAGExecution(TimestampedModel):
+    """DAG execution instance."""
+
+    id: str
+    dag_id: str = Field(alias="dagId")
+    status: DAGStatus
+    input: dict[str, Any] | None = None
+    output: dict[str, Any] | None = None
+    node_executions: list[DAGNodeExecution] = Field(default_factory=list, alias="nodeExecutions")
+    started_at: datetime | None = Field(default=None, alias="startedAt")
+    completed_at: datetime | None = Field(default=None, alias="completedAt")
+    error: TaskError | None = None
+    error_message: str | None = Field(default=None, alias="errorMessage")
+
+
 class DAG(TimestampedModel):
     """DAG model."""
 
@@ -323,6 +380,7 @@ class ApprovalCreate(ApexBaseModel):
     required_approvers: list[str] | None = Field(default=None, alias="requiredApprovers")
     expires_at: datetime | None = Field(default=None, alias="expiresAt")
     metadata: dict[str, Any] | None = None
+    requester_id: str | None = Field(default=None, alias="requesterId")
 
 
 class ApprovalDecision(ApexBaseModel):
@@ -405,6 +463,26 @@ class ApprovalList(ApexBaseModel):
     """Paginated list of approvals."""
 
     items: list[Approval]
+    total: int
+    page: int
+    per_page: int = Field(alias="perPage")
+    total_pages: int = Field(alias="totalPages")
+
+
+class DAGExecutionList(ApexBaseModel):
+    """Paginated list of DAG executions."""
+
+    items: list[DAGExecution]
+    total: int
+    page: int
+    per_page: int = Field(alias="perPage")
+    total_pages: int = Field(alias="totalPages")
+
+
+class TaskLogList(ApexBaseModel):
+    """Paginated list of task logs."""
+
+    items: list[TaskLog]
     total: int
     page: int
     per_page: int = Field(alias="perPage")
