@@ -433,7 +433,7 @@ ROLE_CONFIGS: dict[AgentRole, dict] = {
         "color": "#8b5cf6",
         "icon": "\u270d\ufe0f",
         "temperature": 0.4,
-        "max_tokens": 65536,
+        "max_tokens": 16384,
         "output_schema": (
             "Complete report in markdown with: executive_summary (400-600 words with key takeaways), "
             "background_context, main_sections (each with 4-layer depth: phenomenon→data→viewpoints→insights, "
