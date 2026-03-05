@@ -1,11 +1,17 @@
 """Configuration for the Apex application."""
 
+import logging
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
 # MiniMax API
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
