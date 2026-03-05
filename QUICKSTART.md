@@ -1,108 +1,74 @@
-# Project Apex - Quick Start Guide
+# Apex - Quick Start
 
-Get up and running in 5 minutes.
+Get up and running in 2 minutes.
 
 ## Prerequisites
 
-- Docker & Docker Compose
-- Rust 1.75+
 - Python 3.11+
-- Node.js 20+
-- An OpenAI or Anthropic API key
+- A MiniMax API key
 
-## 1. Clone & Setup
+## 1. Install
 
 ```bash
-git clone https://github.com/apex-swarm/apex.git
+git clone https://github.com/aezizhu/apex.git
 cd apex
-
-# Run setup script
-./scripts/setup.sh
+pip install -r requirements.txt
 ```
 
-## 2. Configure API Keys
-
-Edit `.env` and add your API keys:
+## 2. Configure
 
 ```bash
-OPENAI_API_KEY=sk-your-key-here
-# or
-ANTHROPIC_API_KEY=sk-ant-your-key-here
+cp .env.example .env
 ```
 
-## 3. Start Development
+Edit `.env` and add your MiniMax API key:
+
+```
+MINIMAX_API_KEY=your-key-here
+```
+
+## 3. Run
 
 ```bash
-make dev
+python -m src.backend.core
 ```
 
-This starts:
-- Rust API server on http://localhost:8080
-- Python worker processes
-- React dashboard on http://localhost:3000
-- PostgreSQL, Redis, Jaeger, Prometheus, Grafana
+Open **http://localhost:8000** in your browser.
 
-## 4. Submit Your First Task
+## 4. Try It
+
+- **Swarm mode** (default): Enter a research topic and watch agents work in parallel
+- **Chat mode**: Click "Chat" in the header for direct conversation with MiniMax-M2.5
+
+## Optional: Docker
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Hello World",
-    "instruction": "Say hello and tell me a fun fact",
-    "limits": {
-      "token_limit": 1000,
-      "cost_limit": 0.01
-    }
-  }'
+docker build -f src/backend/core/Dockerfile -t apex .
+docker run -p 8000:8000 --env-file .env apex
 ```
 
-## 5. View the Dashboard
+## Environment Variables
 
-Open http://localhost:3000 to see:
-- Real-time agent status
-- Task progress
-- Cost tracking
-- System metrics
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MINIMAX_API_KEY` | (required) | MiniMax API key |
+| `FIRECRAWL_BASE_URL` | `https://api-production-91c7.up.railway.app` | Web search API |
+| `APEX_HOST` | `0.0.0.0` | Bind address |
+| `APEX_PORT` | `8000` | Port |
+| `APEX_RELOAD` | `false` | Auto-reload for dev |
 
-## Common Commands
+## Troubleshooting
 
-| Command | Description |
-|---------|-------------|
-| `make dev` | Start development environment |
-| `make test` | Run all tests |
-| `make lint` | Run linters |
-| `make build` | Build for production |
-| `make health` | Check service health |
-| `make docker-up` | Start infrastructure only |
-| `make docker-down` | Stop all services |
+### App won't start?
+- Check that `MINIMAX_API_KEY` is set in `.env`
+- Ensure Python 3.11+ is installed: `python --version`
+
+### Swarm produces errors?
+- Check the terminal for log output
+- Verify your MiniMax API key is valid
+- The Firecrawl search API must be reachable
 
 ## Next Steps
 
 - Read the [Architecture Guide](docs/ARCHITECTURE.md)
-- Explore the [API Documentation](docs/API.md)
-- Deploy to production with [Deployment Guide](docs/DEPLOYMENT.md)
-
-## Troubleshooting
-
-### API not starting?
-```bash
-# Check logs
-docker-compose logs -f api
-
-# Verify database is ready
-make health
-```
-
-### Workers not processing tasks?
-```bash
-# Check Redis connection
-docker-compose exec redis redis-cli ping
-
-# View worker logs
-docker-compose logs -f worker
-```
-
-### Need help?
-- Open an issue on GitHub
-- Check existing issues for solutions
+- Check the [API Documentation](docs/API.md)
