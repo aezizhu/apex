@@ -74,7 +74,8 @@ The app starts at **http://localhost:8000**.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | (required) | Your Anthropic API key |
-| `FIRECRAWL_BASE_URL` | `https://api-production-91c7.up.railway.app` | Firecrawl search API URL |
+| `FIRECRAWL_BASE_URL` | `https://api.firecrawl.dev` | Firecrawl search API URL |
+| `FIRECRAWL_API_KEY` | (optional) | Firecrawl API key for authenticated access |
 | `APEX_HOST` | `0.0.0.0` | Server bind address |
 | `APEX_PORT` | `8000` | Server port |
 | `APEX_RELOAD` | `false` | Enable auto-reload for development |
