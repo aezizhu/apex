@@ -38,6 +38,7 @@ def _validate_report_id(report_id: str) -> bool:
     """Return True if report_id is a safe hex string."""
     return re.fullmatch(r'[a-f0-9]+', report_id) is not None
 
+
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="Apex — MiniMax-M2.5")
