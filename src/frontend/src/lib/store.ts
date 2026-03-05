@@ -1,6 +1,14 @@
 import { create } from 'zustand'
 import type { Agent, AgentStatus, Task, TaskStatus, ApprovalRequest, ApprovalStatus, SystemMetrics } from '../types'
 
+// API Key type definition
+export interface ApiKeySummary {
+  id: string
+  provider: string
+  maskedKey: string
+  createdAt: string
+}
+
 // Settings type for the Settings page
 export interface SettingsState {
   maxConcurrentAgents: number
@@ -54,9 +62,9 @@ interface StoreState {
   // Settings state
   settings: SettingsState
   setSettings: (settings: Partial<SettingsState>) => void
-  apiKeys: unknown[]
-  setApiKeys: (keys: unknown[]) => void
-  addApiKey: (key: unknown) => void
+  apiKeys: ApiKeySummary[]
+  setApiKeys: (keys: ApiKeySummary[]) => void
+  addApiKey: (key: ApiKeySummary) => void
   removeApiKey: (keyId: string) => void
 }
 
@@ -162,11 +170,11 @@ export const useStore = create<StoreState>((set) => ({
       settings: { ...state.settings, ...settings },
     })),
 
-  apiKeys: [] as unknown[],
+  apiKeys: [] as ApiKeySummary[],
   setApiKeys: (keys) => set({ apiKeys: keys }),
   addApiKey: (key) => set((state) => ({ apiKeys: [...state.apiKeys, key] })),
   removeApiKey: (keyId) => set((state) => ({
-    apiKeys: state.apiKeys.filter((k) => (k as { id?: string }).id !== keyId)
+    apiKeys: state.apiKeys.filter((k) => k.id !== keyId)
   })),
 }))
 

@@ -56,17 +56,17 @@ class WebSearchClient:
                         "scrapeOptions": {"formats": ["markdown"]},
                     },
                 )
-                if resp.status_code != 200:
-                    logger.error("Firecrawl search error %s: %s", resp.status_code, resp.text[:200])
-                    return []
-                data = resp.json()
-                results = data.get("data", {})
-                # Handle both formats: {web: [...]} and [...]
-                if isinstance(results, dict):
-                    results = results.get("web", [])
-                if not isinstance(results, list):
-                    return []
-                return results
+            if resp.status_code != 200:
+                logger.error("Firecrawl search error %s: %s", resp.status_code, resp.text[:200])
+                return []
+            data = resp.json()
+            results = data.get("data", {})
+            # Handle both formats: {web: [...]} and [...]
+            if isinstance(results, dict):
+                results = results.get("web", [])
+            if not isinstance(results, list):
+                return []
+            return results
         except Exception as exc:
             logger.error("Web search failed: %s", exc)
             return []
@@ -80,10 +80,10 @@ class WebSearchClient:
                     headers=self._headers,
                     json={"url": url, "formats": ["markdown"]},
                 )
-                if resp.status_code != 200:
-                    return ""
-                data = resp.json()
-                return data.get("data", {}).get("markdown", "")
+            if resp.status_code != 200:
+                return ""
+            data = resp.json()
+            return data.get("data", {}).get("markdown", "")
         except Exception as exc:
             logger.error("Scrape failed for %s: %s", url, exc)
             return ""

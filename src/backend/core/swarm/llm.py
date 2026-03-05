@@ -106,25 +106,25 @@ class LLMClient:
             await _rate_limit_wait()
             client = _get_http_client()
             resp = await client.post(self._url, json=payload, headers=self._headers)
-                if resp.status_code == 429 and attempt < self.MAX_RETRIES:
-                    wait = self.BACKOFF_BASE * (2 ** attempt)
-                    logger.warning("Rate limited (429), retrying in %ds (%d/%d)", wait, attempt + 1, self.MAX_RETRIES)
-                    await asyncio.sleep(wait)
-                    continue
-                if resp.status_code == 529 and attempt < self.MAX_RETRIES:
-                    wait = self.BACKOFF_BASE * (2 ** attempt)
-                    logger.warning("API overloaded (529), retrying in %ds (%d/%d)", wait, attempt + 1, self.MAX_RETRIES)
-                    await asyncio.sleep(wait)
-                    continue
-                if resp.status_code != 200:
-                    logger.error("Claude API error %s: %s", resp.status_code, resp.text)
-                    return f"[LLM Error {resp.status_code}]"
-                data = resp.json()
-                # Extract text from content blocks
-                content_blocks = data.get("content", [])
-                return "".join(
-                    block.get("text", "") for block in content_blocks if block.get("type") == "text"
-                )
+            if resp.status_code == 429 and attempt < self.MAX_RETRIES:
+                wait = self.BACKOFF_BASE * (2 ** attempt)
+                logger.warning("Rate limited (429), retrying in %ds (%d/%d)", wait, attempt + 1, self.MAX_RETRIES)
+                await asyncio.sleep(wait)
+                continue
+            if resp.status_code == 529 and attempt < self.MAX_RETRIES:
+                wait = self.BACKOFF_BASE * (2 ** attempt)
+                logger.warning("API overloaded (529), retrying in %ds (%d/%d)", wait, attempt + 1, self.MAX_RETRIES)
+                await asyncio.sleep(wait)
+                continue
+            if resp.status_code != 200:
+                logger.error("Claude API error %s: %s", resp.status_code, resp.text)
+                return f"[LLM Error {resp.status_code}]"
+            data = resp.json()
+            # Extract text from content blocks
+            content_blocks = data.get("content", [])
+            return "".join(
+                block.get("text", "") for block in content_blocks if block.get("type") == "text"
+            )
         return "[LLM Error: max retries exceeded]"
 
     async def stream(self, messages: list[dict], role: AgentRole) -> AsyncGenerator[str, None]:

@@ -364,7 +364,7 @@
             }
 
             if (delta.content) {
-              // MiniMax M2.5 embeds thinking in <think>...</think> tags within content
+              // Parse <think> tags if present (used by some models for chain-of-thought)
               rawStream += delta.content;
 
               // Parse <think> tags from accumulated stream
