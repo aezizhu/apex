@@ -1,2 +1,0 @@
-# SQLx offline query data
-# Run `cargo sqlx prepare` with a database connection to generate query metadata
