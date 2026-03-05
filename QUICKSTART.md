@@ -52,7 +52,8 @@ docker run -p 8000:8000 --env-file .env apex
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | (required) | Anthropic API key |
-| `FIRECRAWL_BASE_URL` | `https://api-production-91c7.up.railway.app` | Web search API |
+| `FIRECRAWL_BASE_URL` | `https://api.firecrawl.dev` | Web search API |
+| `FIRECRAWL_API_KEY` | (optional) | Firecrawl API key for authenticated access |
 | `APEX_HOST` | `0.0.0.0` | Bind address |
 | `APEX_PORT` | `8000` | Port |
 | `APEX_RELOAD` | `false` | Auto-reload for dev |
