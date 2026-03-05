@@ -13,12 +13,12 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
-# MiniMax API
-MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
+# Claude API (Anthropic)
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
-MINIMAX_BASE_URL = "https://api.minimaxi.com/v1"
-MODEL_NAME = "MiniMax-M2.5"
-DEFAULT_MAX_TOKENS = 65536
+ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1"
+MODEL_NAME = os.getenv("APEX_MODEL", "claude-sonnet-4-6")
+DEFAULT_MAX_TOKENS = 16384
 DEFAULT_TEMPERATURE = 1.0
 
 SWARM_DEFAULTS = {

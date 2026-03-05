@@ -1,4 +1,4 @@
-"""Apex — MiniMax-M2.5 Chat Application (FastAPI backend)."""
+"""Apex — Claude-powered Agent Swarm (FastAPI backend)."""
 
 from __future__ import annotations
 
@@ -17,10 +17,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import (
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_BASE_URL,
     DEFAULT_MAX_TOKENS,
     DEFAULT_TEMPERATURE,
-    MINIMAX_API_KEY,
-    MINIMAX_BASE_URL,
     MODEL_NAME,
     REPORTS_DIR,
 )
@@ -42,7 +42,7 @@ def _validate_report_id(report_id: str) -> bool:
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-app = FastAPI(title="Apex — MiniMax-M2.5")
+app = FastAPI(title="Apex — Claude Agent Swarm")
 
 app.add_middleware(
     CORSMiddleware,
@@ -73,48 +73,73 @@ async def index() -> HTMLResponse:
 
 @app.post("/api/chat")
 async def chat(request: Request) -> StreamingResponse:
-    """Proxy user messages to the MiniMax API with SSE streaming."""
+    """Proxy user messages to the Claude API with SSE streaming."""
     body = await request.json()
     messages: list[dict] = body.get("messages", [])
 
-    payload = {
+    # Extract system message for Anthropic format
+    system_prompt = ""
+    anthropic_msgs = []
+    for msg in messages:
+        if msg["role"] == "system":
+            system_prompt = msg["content"]
+        else:
+            anthropic_msgs.append({"role": msg["role"], "content": msg["content"]})
+
+    payload: dict = {
         "model": MODEL_NAME,
-        "messages": messages,
+        "messages": anthropic_msgs,
         "stream": True,
         "max_tokens": DEFAULT_MAX_TOKENS,
         "temperature": DEFAULT_TEMPERATURE,
     }
+    if system_prompt:
+        payload["system"] = system_prompt
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {MINIMAX_API_KEY}",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
     }
 
     async def event_stream() -> AsyncGenerator[str, None]:
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream(
                 "POST",
-                f"{MINIMAX_BASE_URL}/chat/completions",
+                f"{ANTHROPIC_BASE_URL}/messages",
                 json=payload,
                 headers=headers,
             ) as resp:
                 if resp.status_code != 200:
                     error_body = await resp.aread()
                     error_msg = error_body.decode("utf-8", errors="replace")
-                    logger.error("MiniMax API error %s: %s", resp.status_code, error_msg)
+                    logger.error("Claude API error %s: %s", resp.status_code, error_msg)
                     yield f"data: {json.dumps({'error': error_msg})}\n\n"
                     return
 
                 async for line in resp.aiter_lines():
                     if not line:
                         continue
-                    # Forward SSE events as-is
                     if line.startswith("data:"):
                         data_str = line[len("data:"):].strip()
-                        if data_str == "[DONE]":
-                            yield "data: [DONE]\n\n"
-                            break
-                        yield f"data: {data_str}\n\n"
+                        try:
+                            event = json.loads(data_str)
+                            event_type = event.get("type", "")
+                            if event_type == "content_block_delta":
+                                delta = event.get("delta", {})
+                                if delta.get("type") == "text_delta":
+                                    text = delta.get("text", "")
+                                    if text:
+                                        # Re-emit as OpenAI-compatible SSE for the frontend
+                                        sse_data = {
+                                            "choices": [{"delta": {"content": text}}]
+                                        }
+                                        yield f"data: {json.dumps(sse_data)}\n\n"
+                            elif event_type == "message_stop":
+                                yield "data: [DONE]\n\n"
+                                break
+                        except json.JSONDecodeError:
+                            continue
 
     return StreamingResponse(
         event_stream(),
