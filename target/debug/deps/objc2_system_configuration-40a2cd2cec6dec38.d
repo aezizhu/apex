@@ -1,0 +1,8 @@
+/Users/aezi/Desktop/Apex/target/debug/deps/objc2_system_configuration-40a2cd2cec6dec38.d: /Users/aezi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-system-configuration-0.3.2/src/lib.rs /Users/aezi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-system-configuration-0.3.2/src/generated/mod.rs /Users/aezi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-system-configuration-0.3.2/src/generated/SCDynamicStore.rs /Users/aezi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-system-configuration-0.3.2/src/generated/SCDynamicStoreCopySpecific.rs
+
+/Users/aezi/Desktop/Apex/target/debug/deps/libobjc2_system_configuration-40a2cd2cec6dec38.rmeta: /Users/aezi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-system-configuration-0.3.2/src/lib.rs /Users/aezi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-system-configuration-0.3.2/src/generated/mod.rs /Users/aezi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-system-configuration-0.3.2/src/generated/SCDynamicStore.rs /Users/aezi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-system-configuration-0.3.2/src/generated/SCDynamicStoreCopySpecific.rs
+
+/Users/aezi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-system-configuration-0.3.2/src/lib.rs:
+/Users/aezi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-system-configuration-0.3.2/src/generated/mod.rs:
+/Users/aezi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-system-configuration-0.3.2/src/generated/SCDynamicStore.rs:
+/Users/aezi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-system-configuration-0.3.2/src/generated/SCDynamicStoreCopySpecific.rs:

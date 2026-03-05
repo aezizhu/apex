@@ -46,12 +46,14 @@ pub mod v1;
 pub mod v2;
 
 use axum::{
+    http,
     middleware as axum_middleware,
     routing::get,
     Router,
 };
 use tower_http::{
-    cors::{CorsLayer, Any},
+    cors::CorsLayer,
+    cors::Any,
     trace::TraceLayer,
     compression::CompressionLayer,
 };
@@ -76,11 +78,30 @@ pub use versioning::{
 
 /// Build CORS layer from allowed origins config
 fn build_cors_layer(origins: &[String]) -> CorsLayer {
-    // For now, allow any origin when configured (can be restricted later)
-    CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any)
+    // Use configured origins if provided, otherwise allow any
+    if origins.is_empty() || origins.iter().any(|o| o == "*") {
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any)
+    } else {
+        let allowed: Vec<http::HeaderValue> = origins
+            .iter()
+            .filter_map(|o| o.parse().ok())
+            .collect();
+        
+        if allowed.is_empty() {
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any)
+        } else {
+            CorsLayer::new()
+                .allow_origin(http::header::HeaderValue::from(&allowed[0]))
+                .allow_methods(Any)
+                .allow_headers(Any)
+        }
+    }
 }
 
 /// Application state shared across handlers.
