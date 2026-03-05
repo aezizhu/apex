@@ -1,0 +1,34 @@
+{
+  "ignorePatterns": [
+    {
+      "pattern": "^https?://localhost"
+    },
+    {
+      "pattern": "^https?://127\\.0\\.0\\.1"
+    },
+    {
+      "pattern": "^https?://0\\.0\\.0\\.0"
+    },
+    {
+      "pattern": "^https?://example\\.com"
+    },
+    {
+      "pattern": "^https?://staging\\.apex\\.example\\.com"
+    },
+    {
+      "pattern": "^https?://apex\\.example\\.com"
+    }
+  ],
+  "httpHeaders": [
+    {
+      "urls": ["https://github.com"],
+      "headers": {
+        "Accept-Encoding": "zstd, br, gzip, deflate"
+      }
+    }
+  ],
+  "retryOn429": true,
+  "retryCount": 3,
+  "fallbackRetryDelay": "30s",
+  "aliveStatusCodes": [200, 206, 301, 302, 403]
+}

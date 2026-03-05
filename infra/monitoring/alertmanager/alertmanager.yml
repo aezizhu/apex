@@ -1,0 +1,186 @@
+global:
+  # The smarthost and SMTP sender used for mail notifications.
+  smtp_smarthost: 'smtp.example.com:587'
+  smtp_from: 'alertmanager@apex.local'
+  smtp_auth_username: 'alertmanager@apex.local'
+  smtp_auth_password: ''
+  smtp_require_tls: true
+
+  # The auth token for Slack.
+  slack_api_url: ''
+
+  # PagerDuty integration
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+
+  # OpsGenie integration
+  opsgenie_api_url: 'https://api.opsgenie.com/'
+
+  # Default resolve timeout
+  resolve_timeout: 5m
+
+# The directory from which notification templates are read.
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# The root route on which each incoming alert enters.
+route:
+  # The labels by which incoming alerts are grouped together.
+  group_by: ['alertname', 'severity', 'service']
+
+  # When a new group of alerts is created, wait at least 'group_wait' to send the initial notification.
+  group_wait: 30s
+
+  # When the first notification was sent, wait 'group_interval' to send a batch of new alerts that started firing for that group.
+  group_interval: 5m
+
+  # If an alert has successfully been sent, wait 'repeat_interval' to resend them.
+  repeat_interval: 4h
+
+  # Default receiver
+  receiver: 'default-receiver'
+
+  # Child routes
+  routes:
+    # Critical alerts go to PagerDuty and Slack
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      continue: true
+      routes:
+        - match:
+            service: apex
+          receiver: 'apex-critical'
+
+    # Warning alerts go to Slack
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 1m
+      group_interval: 10m
+
+    # Info alerts are batched and sent less frequently
+    - match:
+        severity: info
+      receiver: 'info-alerts'
+      group_wait: 5m
+      group_interval: 30m
+      repeat_interval: 24h
+
+    # Cost alerts
+    - match:
+        alertname: HighModelCost
+      receiver: 'cost-alerts'
+
+    # Infrastructure alerts
+    - match_re:
+        alertname: (HighCPU|HighMemory|DiskSpaceLow)
+      receiver: 'infrastructure-alerts'
+
+# Inhibition rules allow to mute a set of alerts given that another alert is firing.
+inhibit_rules:
+  # If a critical alert is firing, inhibit warning alerts for the same service
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'service']
+
+  # If the service is down, don't send other alerts
+  - source_match:
+      alertname: 'ServiceDown'
+    target_match_re:
+      alertname: '.+'
+    equal: ['service']
+
+# Receivers define notification integrations
+receivers:
+  - name: 'default-receiver'
+    email_configs:
+      - to: 'ops-team@apex.local'
+        send_resolved: true
+
+  - name: 'critical-alerts'
+    pagerduty_configs:
+      - service_key: ''
+        severity: critical
+        description: '{{ .CommonAnnotations.summary }}'
+        details:
+          firing: '{{ template "pagerduty.default.instances" .Alerts.Firing }}'
+          resolved: '{{ template "pagerduty.default.instances" .Alerts.Resolved }}'
+    slack_configs:
+      - channel: '#apex-critical'
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        title: '{{ .CommonAnnotations.summary }}'
+        text: '{{ .CommonAnnotations.description }}'
+        actions:
+          - type: button
+            text: 'Runbook'
+            url: '{{ .CommonAnnotations.runbook_url }}'
+          - type: button
+            text: 'Dashboard'
+            url: '{{ .CommonAnnotations.dashboard_url }}'
+
+  - name: 'apex-critical'
+    slack_configs:
+      - channel: '#apex-critical'
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        title: '[CRITICAL] {{ .CommonAnnotations.summary }}'
+        text: |
+          *Alert:* {{ .CommonLabels.alertname }}
+          *Service:* {{ .CommonLabels.service }}
+          *Severity:* {{ .CommonLabels.severity }}
+          *Description:* {{ .CommonAnnotations.description }}
+          {{ range .Alerts }}
+          *Instance:* {{ .Labels.instance }}
+          *Value:* {{ .Annotations.value }}
+          {{ end }}
+    webhook_configs:
+      - url: 'http://apex-api:8080/webhooks/alerts'
+        send_resolved: true
+
+  - name: 'warning-alerts'
+    slack_configs:
+      - channel: '#apex-warnings'
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+        title: '[WARNING] {{ .CommonAnnotations.summary }}'
+        text: '{{ .CommonAnnotations.description }}'
+
+  - name: 'info-alerts'
+    slack_configs:
+      - channel: '#apex-info'
+        send_resolved: false
+        color: '#439FE0'
+        title: '[INFO] {{ .CommonAnnotations.summary }}'
+        text: '{{ .CommonAnnotations.description }}'
+
+  - name: 'cost-alerts'
+    email_configs:
+      - to: 'finance@apex.local'
+        send_resolved: true
+        headers:
+          Subject: '[Apex Cost Alert] {{ .CommonAnnotations.summary }}'
+    slack_configs:
+      - channel: '#apex-costs'
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+        title: '[COST] {{ .CommonAnnotations.summary }}'
+        text: |
+          *Alert:* {{ .CommonLabels.alertname }}
+          *Current Cost:* {{ .CommonAnnotations.current_cost }}
+          *Threshold:* {{ .CommonAnnotations.threshold }}
+          *Description:* {{ .CommonAnnotations.description }}
+
+  - name: 'infrastructure-alerts'
+    slack_configs:
+      - channel: '#apex-infrastructure'
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+        title: '[INFRA] {{ .CommonAnnotations.summary }}'
+        text: |
+          *Alert:* {{ .CommonLabels.alertname }}
+          *Instance:* {{ .CommonLabels.instance }}
+          *Description:* {{ .CommonAnnotations.description }}
+          *Value:* {{ .CommonAnnotations.value }}

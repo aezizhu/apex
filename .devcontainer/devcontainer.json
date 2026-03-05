@@ -1,0 +1,235 @@
+{
+  "name": "Apex Development Environment",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "devcontainer",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+
+  // Features to add to the dev container
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest",
+      "ppa": true
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "latest"
+    }
+  },
+
+  // Configure tool-specific properties
+  "customizations": {
+    "vscode": {
+      "settings": {
+        // Editor
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": null,
+        "editor.tabSize": 2,
+        "editor.insertSpaces": true,
+        "editor.rulers": [100],
+        "editor.bracketPairColorization.enabled": true,
+        "editor.guides.bracketPairs": true,
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true,
+
+        // Terminal
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.fontFamily": "MesloLGS NF, monospace",
+
+        // Rust
+        "rust-analyzer.cargo.features": "all",
+        "rust-analyzer.checkOnSave.command": "clippy",
+        "rust-analyzer.inlayHints.parameterHints.enable": true,
+        "rust-analyzer.inlayHints.typeHints.enable": true,
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer",
+          "editor.formatOnSave": true
+        },
+
+        // Python
+        "python.defaultInterpreterPath": "/usr/local/pyenv/shims/python",
+        "python.linting.enabled": true,
+        "python.linting.mypyEnabled": true,
+        "python.formatting.provider": "none",
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit",
+            "source.fixAll": "explicit"
+          }
+        },
+        "ruff.lint.run": "onSave",
+
+        // TypeScript/JavaScript
+        "[typescript]": {
+          "editor.defaultFormatter": "biomejs.biome",
+          "editor.formatOnSave": true
+        },
+        "[typescriptreact]": {
+          "editor.defaultFormatter": "biomejs.biome",
+          "editor.formatOnSave": true
+        },
+        "[javascript]": {
+          "editor.defaultFormatter": "biomejs.biome",
+          "editor.formatOnSave": true
+        },
+        "[javascriptreact]": {
+          "editor.defaultFormatter": "biomejs.biome",
+          "editor.formatOnSave": true
+        },
+        "[json]": {
+          "editor.defaultFormatter": "biomejs.biome"
+        },
+        "[jsonc]": {
+          "editor.defaultFormatter": "biomejs.biome"
+        },
+
+        // YAML/Markdown/Other
+        "[yaml]": {
+          "editor.defaultFormatter": "redhat.vscode-yaml"
+        },
+        "[markdown]": {
+          "editor.defaultFormatter": "DavidAnson.vscode-markdownlint",
+          "editor.wordWrap": "on"
+        },
+        "[dockerfile]": {
+          "editor.defaultFormatter": "ms-azuretools.vscode-docker"
+        },
+
+        // Git
+        "git.autofetch": true,
+        "git.enableSmartCommit": true,
+        "git.confirmSync": false,
+
+        // Testing
+        "testing.automaticallyOpenPeekView": "never",
+
+        // Explorer
+        "explorer.excludeGitIgnore": false,
+        "explorer.fileNesting.enabled": true,
+        "explorer.fileNesting.patterns": {
+          "*.ts": "${capture}.test.ts, ${capture}.spec.ts",
+          "*.tsx": "${capture}.test.tsx, ${capture}.spec.tsx",
+          "*.rs": "${capture}.test.rs",
+          "package.json": "package-lock.json, yarn.lock, pnpm-lock.yaml, .npmrc",
+          "Cargo.toml": "Cargo.lock, rust-toolchain.toml, .cargo",
+          "pyproject.toml": "poetry.lock, requirements*.txt, setup.py, setup.cfg",
+          ".env": ".env.*, .envrc",
+          "docker-compose.yml": "docker-compose*.yml, .dockerignore"
+        }
+      },
+      "extensions": [
+        // Rust
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "vadimcn.vscode-lldb",
+
+        // Python
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "ms-python.debugpy",
+
+        // JavaScript/TypeScript
+        "biomejs.biome",
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+
+        // Docker & Kubernetes
+        "ms-azuretools.vscode-docker",
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+
+        // Database
+        "cweijan.vscode-database-client2",
+        "mtxr.sqltools",
+
+        // Git
+        "eamodio.gitlens",
+        "mhutchie.git-graph",
+
+        // General
+        "EditorConfig.EditorConfig",
+        "redhat.vscode-yaml",
+        "DavidAnson.vscode-markdownlint",
+        "streetsidesoftware.code-spell-checker",
+        "usernamehw.errorlens",
+        "Gruntfuggly.todo-tree",
+        "christian-kohler.path-intellisense",
+        "mikestead.dotenv",
+
+        // Testing
+        "ms-vscode.test-adapter-converter",
+        "hbenl.vscode-test-explorer",
+
+        // API Development
+        "humao.rest-client",
+        "Postman.postman-for-vscode",
+
+        // Themes & Icons
+        "PKief.material-icon-theme",
+        "GitHub.github-vscode-theme"
+      ]
+    }
+  },
+
+  // Ports to forward from the container
+  "forwardPorts": [
+    3000,   // Dashboard
+    8080,   // API HTTP
+    50051,  // API gRPC
+    9090,   // Prometheus
+    16686,  // Jaeger UI
+    3001,   // Grafana
+    5432,   // PostgreSQL
+    6379    // Redis
+  ],
+
+  "portsAttributes": {
+    "3000": { "label": "Dashboard", "onAutoForward": "notify" },
+    "8080": { "label": "API", "onAutoForward": "notify" },
+    "50051": { "label": "gRPC", "onAutoForward": "ignore" },
+    "9090": { "label": "Prometheus", "onAutoForward": "ignore" },
+    "16686": { "label": "Jaeger", "onAutoForward": "ignore" },
+    "3001": { "label": "Grafana", "onAutoForward": "ignore" },
+    "5432": { "label": "PostgreSQL", "onAutoForward": "ignore" },
+    "6379": { "label": "Redis", "onAutoForward": "ignore" }
+  },
+
+  // Commands to run after container creation
+  "postCreateCommand": "/workspace/.devcontainer/post-create.sh",
+
+  // Commands to run when the container starts
+  "postStartCommand": "/workspace/.devcontainer/post-start.sh",
+
+  // Environment variables
+  "containerEnv": {
+    "APEX_ENVIRONMENT": "development",
+    "APEX_LOG_LEVEL": "DEBUG",
+    "RUST_LOG": "debug,apex_core=trace",
+    "DATABASE_URL": "postgres://apex:apex_secret@postgres:5432/apex",
+    "REDIS_URL": "redis://redis:6379",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://jaeger:4317"
+  },
+
+  // User to run as
+  "remoteUser": "apex",
+
+  // Mount points
+  "mounts": [
+    "source=${localEnv:HOME}/.ssh,target=/home/apex/.ssh,type=bind,readonly",
+    "source=${localEnv:HOME}/.gitconfig,target=/home/apex/.gitconfig,type=bind,readonly",
+    "source=apex-cargo-cache,target=/usr/local/cargo/registry,type=volume",
+    "source=apex-node-modules,target=/workspace/src/frontend/node_modules,type=volume"
+  ],
+
+  // Host requirements
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  }
+}

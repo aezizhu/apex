@@ -1,0 +1,37 @@
+# Integration Test Dependencies for Project Apex
+# Install with: pip install -r tests/integration/requirements-test.txt
+
+# Testing framework
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-timeout>=2.2.0
+pytest-xdist>=3.3.0  # For parallel test execution
+
+# Async support
+asyncio>=3.4.3
+
+# Database clients
+asyncpg>=0.29.0
+
+# Redis client
+redis>=5.0.0
+
+# HTTP client (should match SDK dependencies)
+httpx>=0.25.0
+
+# WebSocket client (should match SDK dependencies)
+websockets>=12.0
+
+# Data validation
+pydantic>=2.5.0
+
+# Retry logic
+tenacity>=8.2.0
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Development/debugging
+ipdb>=0.13.0
+rich>=13.0.0

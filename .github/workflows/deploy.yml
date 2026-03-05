@@ -1,0 +1,810 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Project Apex - Deployment Pipeline
+# ══════════════════════════════════════════════════════════════════════════════
+# Handles deployments to staging and production environments
+# Uses Kubernetes/Helm for deployments with Slack notifications
+
+name: Deploy
+
+on:
+  # Deploy to staging when PRs are merged to main
+  push:
+    branches: [main]
+
+  # Deploy to production on release
+  release:
+    types: [published]
+
+  # Manual deployment
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      version:
+        description: 'Version/tag to deploy (leave empty for latest)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run (preview changes only)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || (github.event_name == 'release' && 'production' || 'staging') }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/apex
+  HELM_VERSION: 'v3.14.0'
+  KUBECTL_VERSION: 'v1.29.0'
+
+jobs:
+  # ════════════════════════════════════════════════════════════════════════════
+  # Prepare Deployment
+  # ════════════════════════════════════════════════════════════════════════════
+  prepare:
+    name: Prepare Deployment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.config.outputs.environment }}
+      version: ${{ steps.config.outputs.version }}
+      namespace: ${{ steps.config.outputs.namespace }}
+      cluster: ${{ steps.config.outputs.cluster }}
+      values_file: ${{ steps.config.outputs.values_file }}
+      should_deploy: ${{ steps.config.outputs.should_deploy }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine deployment configuration
+        id: config
+        run: |
+          # Determine environment
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENVIRONMENT="${{ inputs.environment }}"
+            VERSION="${{ inputs.version }}"
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            ENVIRONMENT="production"
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"  # Remove 'v' prefix
+          else
+            ENVIRONMENT="staging"
+            VERSION="${{ github.sha }}"
+          fi
+
+          # Use latest if version not specified
+          if [[ -z "$VERSION" ]]; then
+            VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "${{ github.sha }}")
+            VERSION="${VERSION#v}"
+          fi
+
+          # Set environment-specific config
+          case $ENVIRONMENT in
+            staging)
+              NAMESPACE="apex-staging"
+              CLUSTER="staging-cluster"
+              VALUES_FILE="values-staging.yaml"
+              ;;
+            production)
+              NAMESPACE="apex-production"
+              CLUSTER="production-cluster"
+              VALUES_FILE="values-production.yaml"
+              ;;
+          esac
+
+          # Check if we should deploy
+          SHOULD_DEPLOY="true"
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            SHOULD_DEPLOY="false"
+          fi
+
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "namespace=$NAMESPACE" >> $GITHUB_OUTPUT
+          echo "cluster=$CLUSTER" >> $GITHUB_OUTPUT
+          echo "values_file=$VALUES_FILE" >> $GITHUB_OUTPUT
+          echo "should_deploy=$SHOULD_DEPLOY" >> $GITHUB_OUTPUT
+
+          echo "Deployment Configuration:"
+          echo "  Environment: $ENVIRONMENT"
+          echo "  Version: $VERSION"
+          echo "  Namespace: $NAMESPACE"
+          echo "  Cluster: $CLUSTER"
+          echo "  Dry Run: ${{ inputs.dry_run }}"
+
+      - name: Validate images exist
+        run: |
+          VERSION="${{ steps.config.outputs.version }}"
+
+          for IMAGE in api worker dashboard; do
+            echo "Checking ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${IMAGE}:${VERSION}..."
+            # Note: This requires authentication - skip in dry run
+            if [[ "${{ inputs.dry_run }}" != "true" ]]; then
+              docker pull "${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${IMAGE}:${VERSION}" || {
+                echo "::error::Image ${{ env.IMAGE_PREFIX }}-${IMAGE}:${VERSION} not found"
+                exit 1
+              }
+            fi
+          done
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Notify Start
+  # ════════════════════════════════════════════════════════════════════════════
+  notify-start:
+    name: Notify Deployment Start
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - name: Send Slack notification
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "Deployment started for Apex v${{ needs.prepare.outputs.version }} to ${{ needs.prepare.outputs.environment }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Deployment Started :rocket:"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Environment:*\n${{ needs.prepare.outputs.environment }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Version:*\n${{ needs.prepare.outputs.version }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Triggered by:*\n${{ github.actor }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Dry Run:*\n${{ inputs.dry_run || 'false' }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Workflow>"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Deploy to Staging
+  # ════════════════════════════════════════════════════════════════════════════
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [prepare, notify-start]
+    if: needs.prepare.outputs.environment == 'staging'
+    environment:
+      name: staging
+      url: https://staging.apex.example.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Configure AWS credentials
+        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+
+      - name: Update kubeconfig
+        run: |
+          # For AWS EKS
+          if [[ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ]]; then
+            aws eks update-kubeconfig --name ${{ needs.prepare.outputs.cluster }} --region ${{ vars.AWS_REGION || 'us-west-2' }}
+          fi
+
+          # For GKE - uncomment if using GCP
+          # echo "${{ secrets.GCP_SA_KEY }}" | base64 -d > gcp-key.json
+          # gcloud auth activate-service-account --key-file=gcp-key.json
+          # gcloud container clusters get-credentials ${{ needs.prepare.outputs.cluster }} --region ${{ vars.GCP_REGION }}
+
+          # For Azure AKS - uncomment if using Azure
+          # az login --service-principal -u "${{ secrets.AZURE_CLIENT_ID }}" -p "${{ secrets.AZURE_CLIENT_SECRET }}" --tenant "${{ secrets.AZURE_TENANT_ID }}"
+          # az aks get-credentials --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} --name ${{ needs.prepare.outputs.cluster }}
+
+      - name: Login to container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create namespace if not exists
+        if: needs.prepare.outputs.should_deploy == 'true'
+        run: |
+          kubectl create namespace ${{ needs.prepare.outputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Update Helm dependencies
+        run: |
+          helm dependency update infra/k8s/helm/apex
+
+      - name: Deploy with Helm (dry run)
+        id: helm-diff
+        run: |
+          helm upgrade apex infra/k8s/helm/apex \
+            --namespace ${{ needs.prepare.outputs.namespace }} \
+            --install \
+            --dry-run \
+            --debug \
+            --set global.imageRegistry=${{ env.REGISTRY }} \
+            --set api.image.tag=${{ needs.prepare.outputs.version }} \
+            --set worker.image.tag=${{ needs.prepare.outputs.version }} \
+            --set dashboard.image.tag=${{ needs.prepare.outputs.version }} \
+            --set global.environment=staging \
+            -f infra/k8s/helm/apex/values.yaml \
+            -f infra/k8s/helm/apex/values-staging.yaml 2>&1 | tee helm-diff.txt
+
+      - name: Upload Helm diff
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-diff-staging
+          path: helm-diff.txt
+
+      - name: Deploy with Helm
+        if: needs.prepare.outputs.should_deploy == 'true'
+        run: |
+          helm upgrade apex infra/k8s/helm/apex \
+            --namespace ${{ needs.prepare.outputs.namespace }} \
+            --install \
+            --atomic \
+            --timeout 10m \
+            --wait \
+            --set global.imageRegistry=${{ env.REGISTRY }} \
+            --set api.image.tag=${{ needs.prepare.outputs.version }} \
+            --set worker.image.tag=${{ needs.prepare.outputs.version }} \
+            --set dashboard.image.tag=${{ needs.prepare.outputs.version }} \
+            --set global.environment=staging \
+            --set secrets.openaiApiKey=${{ secrets.OPENAI_API_KEY }} \
+            --set secrets.anthropicApiKey=${{ secrets.ANTHROPIC_API_KEY }} \
+            --set secrets.jwtSecret=${{ secrets.JWT_SECRET }} \
+            -f infra/k8s/helm/apex/values.yaml \
+            -f infra/k8s/helm/apex/values-staging.yaml
+
+      - name: Wait for rollout
+        if: needs.prepare.outputs.should_deploy == 'true'
+        run: |
+          kubectl rollout status deployment/apex-api -n ${{ needs.prepare.outputs.namespace }} --timeout=5m
+          kubectl rollout status deployment/apex-worker -n ${{ needs.prepare.outputs.namespace }} --timeout=5m
+          kubectl rollout status deployment/apex-dashboard -n ${{ needs.prepare.outputs.namespace }} --timeout=5m
+
+      - name: Run smoke tests
+        if: needs.prepare.outputs.should_deploy == 'true'
+        run: |
+          # Get the API endpoint
+          API_URL=$(kubectl get ingress -n ${{ needs.prepare.outputs.namespace }} -o jsonpath='{.items[0].spec.rules[0].host}')
+
+          # Health check
+          for i in {1..10}; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://${API_URL}/health" || echo "000")
+            if [[ "$HTTP_CODE" == "200" ]]; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $HTTP_CODE - retrying in 10s..."
+            sleep 10
+          done
+
+          echo "::error::Smoke tests failed - health endpoint not responding"
+          exit 1
+
+      - name: Get deployment status
+        if: always()
+        run: |
+          echo "### Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          kubectl get pods -n ${{ needs.prepare.outputs.namespace }} -o wide >> $GITHUB_STEP_SUMMARY || true
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          kubectl get services -n ${{ needs.prepare.outputs.namespace }} >> $GITHUB_STEP_SUMMARY || true
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Deploy to Production
+  # ════════════════════════════════════════════════════════════════════════════
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [prepare, notify-start]
+    if: needs.prepare.outputs.environment == 'production'
+    environment:
+      name: production
+      url: https://apex.example.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Configure AWS credentials
+        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+
+      - name: Update kubeconfig
+        run: |
+          if [[ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ]]; then
+            aws eks update-kubeconfig --name ${{ needs.prepare.outputs.cluster }} --region ${{ vars.AWS_REGION || 'us-west-2' }}
+          fi
+
+      - name: Login to container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create namespace if not exists
+        if: needs.prepare.outputs.should_deploy == 'true'
+        run: |
+          kubectl create namespace ${{ needs.prepare.outputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Update Helm dependencies
+        run: |
+          helm dependency update infra/k8s/helm/apex
+
+      - name: Deploy with Helm (dry run)
+        id: helm-diff
+        run: |
+          helm upgrade apex infra/k8s/helm/apex \
+            --namespace ${{ needs.prepare.outputs.namespace }} \
+            --install \
+            --dry-run \
+            --debug \
+            --set global.imageRegistry=${{ env.REGISTRY }} \
+            --set api.image.tag=${{ needs.prepare.outputs.version }} \
+            --set worker.image.tag=${{ needs.prepare.outputs.version }} \
+            --set dashboard.image.tag=${{ needs.prepare.outputs.version }} \
+            --set global.environment=production \
+            -f infra/k8s/helm/apex/values.yaml \
+            -f infra/k8s/helm/apex/values-production.yaml 2>&1 | tee helm-diff.txt
+
+      - name: Upload Helm diff
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-diff-production
+          path: helm-diff.txt
+
+      - name: Create database backup
+        if: needs.prepare.outputs.should_deploy == 'true'
+        run: |
+          echo "Creating pre-deployment database backup..."
+          # kubectl exec -n ${{ needs.prepare.outputs.namespace }} \
+          #   $(kubectl get pod -n ${{ needs.prepare.outputs.namespace }} -l app=postgresql -o jsonpath='{.items[0].metadata.name}') \
+          #   -- pg_dump -U apex apex | gzip > backup-$(date +%Y%m%d-%H%M%S).sql.gz
+          echo "Backup would be created here"
+
+      - name: Deploy with Helm (canary)
+        if: needs.prepare.outputs.should_deploy == 'true'
+        run: |
+          # First deploy with reduced replicas for canary testing
+          helm upgrade apex infra/k8s/helm/apex \
+            --namespace ${{ needs.prepare.outputs.namespace }} \
+            --install \
+            --atomic \
+            --timeout 15m \
+            --wait \
+            --set global.imageRegistry=${{ env.REGISTRY }} \
+            --set api.image.tag=${{ needs.prepare.outputs.version }} \
+            --set worker.image.tag=${{ needs.prepare.outputs.version }} \
+            --set dashboard.image.tag=${{ needs.prepare.outputs.version }} \
+            --set global.environment=production \
+            --set api.replicaCount=1 \
+            --set worker.replicaCount=1 \
+            --set secrets.openaiApiKey=${{ secrets.OPENAI_API_KEY }} \
+            --set secrets.anthropicApiKey=${{ secrets.ANTHROPIC_API_KEY }} \
+            --set secrets.jwtSecret=${{ secrets.JWT_SECRET }} \
+            -f infra/k8s/helm/apex/values.yaml \
+            -f infra/k8s/helm/apex/values-production.yaml
+
+      - name: Run canary health checks
+        if: needs.prepare.outputs.should_deploy == 'true'
+        run: |
+          API_URL=$(kubectl get ingress -n ${{ needs.prepare.outputs.namespace }} -o jsonpath='{.items[0].spec.rules[0].host}')
+
+          echo "Running canary health checks..."
+
+          for endpoint in "/health" "/api/v1/health" "/metrics"; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://${API_URL}${endpoint}" || echo "000")
+            if [[ "$HTTP_CODE" != "200" ]]; then
+              echo "::error::Canary health check failed for ${endpoint}: HTTP $HTTP_CODE"
+              exit 1
+            fi
+            echo "Health check passed for ${endpoint}"
+          done
+
+      - name: Scale to full production
+        if: needs.prepare.outputs.should_deploy == 'true'
+        run: |
+          echo "Canary tests passed. Scaling to full production..."
+
+          helm upgrade apex infra/k8s/helm/apex \
+            --namespace ${{ needs.prepare.outputs.namespace }} \
+            --install \
+            --atomic \
+            --timeout 15m \
+            --wait \
+            --set global.imageRegistry=${{ env.REGISTRY }} \
+            --set api.image.tag=${{ needs.prepare.outputs.version }} \
+            --set worker.image.tag=${{ needs.prepare.outputs.version }} \
+            --set dashboard.image.tag=${{ needs.prepare.outputs.version }} \
+            --set global.environment=production \
+            --set secrets.openaiApiKey=${{ secrets.OPENAI_API_KEY }} \
+            --set secrets.anthropicApiKey=${{ secrets.ANTHROPIC_API_KEY }} \
+            --set secrets.jwtSecret=${{ secrets.JWT_SECRET }} \
+            -f infra/k8s/helm/apex/values.yaml \
+            -f infra/k8s/helm/apex/values-production.yaml
+
+      - name: Wait for full rollout
+        if: needs.prepare.outputs.should_deploy == 'true'
+        run: |
+          kubectl rollout status deployment/apex-api -n ${{ needs.prepare.outputs.namespace }} --timeout=10m
+          kubectl rollout status deployment/apex-worker -n ${{ needs.prepare.outputs.namespace }} --timeout=10m
+          kubectl rollout status deployment/apex-dashboard -n ${{ needs.prepare.outputs.namespace }} --timeout=10m
+
+      - name: Run production smoke tests
+        if: needs.prepare.outputs.should_deploy == 'true'
+        run: |
+          API_URL=$(kubectl get ingress -n ${{ needs.prepare.outputs.namespace }} -o jsonpath='{.items[0].spec.rules[0].host}')
+
+          echo "Running production smoke tests..."
+
+          # Check all pods are running
+          READY_PODS=$(kubectl get pods -n ${{ needs.prepare.outputs.namespace }} -l "app.kubernetes.io/instance=apex" --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}' | wc -w)
+          if [[ "$READY_PODS" -lt 3 ]]; then
+            echo "::error::Not all pods are running"
+            exit 1
+          fi
+
+          # API health check
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://${API_URL}/health")
+          if [[ "$HTTP_CODE" != "200" ]]; then
+            echo "::error::Production smoke test failed"
+            exit 1
+          fi
+
+          echo "All production smoke tests passed!"
+
+      - name: Tag successful deployment
+        if: needs.prepare.outputs.should_deploy == 'true' && github.event_name != 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "deployed-production-${{ needs.prepare.outputs.version }}" -m "Deployed to production"
+          git push origin "deployed-production-${{ needs.prepare.outputs.version }}" || true
+
+      - name: Get deployment status
+        if: always()
+        run: |
+          echo "### Production Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "#### Pods" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get pods -n ${{ needs.prepare.outputs.namespace }} -o wide >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          echo "#### Services" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get services -n ${{ needs.prepare.outputs.namespace }} >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Post-Deployment
+  # ════════════════════════════════════════════════════════════════════════════
+  post-deploy:
+    name: Post-Deployment Tasks
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy-staging, deploy-production]
+    if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run database migrations
+        run: |
+          echo "Running post-deployment database migrations..."
+          # kubectl exec -n ${{ needs.prepare.outputs.namespace }} \
+          #   deployment/apex-api -- /app/apex-server migrate
+
+      - name: Invalidate CDN cache
+        if: needs.prepare.outputs.environment == 'production'
+        run: |
+          echo "Invalidating CDN cache..."
+          # aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} --paths "/*"
+
+      - name: Update status page
+        run: |
+          echo "Updating status page..."
+          # curl -X POST "${{ secrets.STATUS_PAGE_URL }}/api/incidents" \
+          #   -H "Authorization: Bearer ${{ secrets.STATUS_PAGE_TOKEN }}" \
+          #   -d '{"status": "resolved", "message": "Deployment completed successfully"}'
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Notify Complete
+  # ════════════════════════════════════════════════════════════════════════════
+  notify-complete:
+    name: Notify Deployment Complete
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy-staging, deploy-production, post-deploy]
+    if: always()
+    steps:
+      - name: Determine deployment result
+        id: result
+        run: |
+          if [[ "${{ needs.prepare.outputs.environment }}" == "staging" ]]; then
+            DEPLOY_RESULT="${{ needs.deploy-staging.result }}"
+          else
+            DEPLOY_RESULT="${{ needs.deploy-production.result }}"
+          fi
+
+          echo "result=$DEPLOY_RESULT" >> $GITHUB_OUTPUT
+
+      - name: Send Slack notification (success)
+        if: steps.result.outputs.result == 'success' && secrets.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "Deployment successful! Apex v${{ needs.prepare.outputs.version }} deployed to ${{ needs.prepare.outputs.environment }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Deployment Successful :white_check_mark:"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Environment:*\n${{ needs.prepare.outputs.environment }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Version:*\n${{ needs.prepare.outputs.version }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Deployed by:*\n${{ github.actor }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Duration:*\n${{ github.event.workflow_run.run_duration_ms || 'N/A' }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Application"
+                      },
+                      "url": "${{ needs.prepare.outputs.environment == 'production' && 'https://apex.example.com' || 'https://staging.apex.example.com' }}"
+                    },
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Workflow"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Send Slack notification (failure)
+        if: steps.result.outputs.result == 'failure' && secrets.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "Deployment FAILED! Apex v${{ needs.prepare.outputs.version }} to ${{ needs.prepare.outputs.environment }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Deployment Failed :x:"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Environment:*\n${{ needs.prepare.outputs.environment }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Version:*\n${{ needs.prepare.outputs.version }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Triggered by:*\n${{ github.actor }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":warning: *Action Required:* Please investigate the failure and consider rolling back if necessary."
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Logs"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                      "style": "danger"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Send PagerDuty alert (production failure)
+        if: steps.result.outputs.result == 'failure' && needs.prepare.outputs.environment == 'production' && secrets.PAGERDUTY_ROUTING_KEY != ''
+        run: |
+          curl -X POST https://events.pagerduty.com/v2/enqueue \
+            -H "Content-Type: application/json" \
+            -d '{
+              "routing_key": "${{ secrets.PAGERDUTY_ROUTING_KEY }}",
+              "event_action": "trigger",
+              "dedup_key": "apex-deploy-${{ github.run_id }}",
+              "payload": {
+                "summary": "Apex production deployment failed - v${{ needs.prepare.outputs.version }}",
+                "severity": "critical",
+                "source": "GitHub Actions",
+                "custom_details": {
+                  "environment": "production",
+                  "version": "${{ needs.prepare.outputs.version }}",
+                  "triggered_by": "${{ github.actor }}",
+                  "workflow_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                }
+              }
+            }'
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Rollback (manual trigger)
+  # ════════════════════════════════════════════════════════════════════════════
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && failure()
+    needs: [prepare, deploy-staging, deploy-production]
+    environment:
+      name: ${{ needs.prepare.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Configure credentials
+        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+
+      - name: Update kubeconfig
+        run: |
+          if [[ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ]]; then
+            aws eks update-kubeconfig --name ${{ needs.prepare.outputs.cluster }} --region ${{ vars.AWS_REGION || 'us-west-2' }}
+          fi
+
+      - name: Rollback to previous release
+        run: |
+          echo "Rolling back to previous release..."
+          helm rollback apex -n ${{ needs.prepare.outputs.namespace }}
+
+      - name: Verify rollback
+        run: |
+          kubectl rollout status deployment/apex-api -n ${{ needs.prepare.outputs.namespace }} --timeout=5m
+          kubectl rollout status deployment/apex-worker -n ${{ needs.prepare.outputs.namespace }} --timeout=5m
+
+      - name: Notify rollback
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "Rollback completed for ${{ needs.prepare.outputs.environment }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Rollback Completed :rewind:"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "Deployment to *${{ needs.prepare.outputs.environment }}* has been rolled back to the previous version."
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

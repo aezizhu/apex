@@ -1,0 +1,262 @@
+# Prometheus Alerting Rules for Project Apex
+# Comprehensive alerting covering task execution, cost, agents, and infrastructure.
+
+groups:
+  - name: apex-critical
+    interval: 30s
+    rules:
+      # Task failure rate exceeds 5% over a 5-minute window
+      - alert: HighErrorRate
+        expr: >
+          rate(apex_tasks_total{status="failed"}[5m])
+          /
+          rate(apex_tasks_total[5m])
+          > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          service: apex
+          component: tasks
+        annotations:
+          summary: "Task failure rate above 5%"
+          description: >
+            The task failure rate is {{ $value | humanizePercentage }} over the
+            last 5 minutes, which exceeds the 5% threshold. Immediate
+            investigation is required.
+          runbook_url: "https://wiki.apex.local/runbooks/high-error-rate"
+          dashboard_url: "https://grafana.apex.local/d/apex-platform-overview"
+
+      # Daily cost budget exceeded
+      - alert: CostOverspend
+        expr: sum(increase(apex_cost_total_dollars[24h])) > 100
+        labels:
+          severity: warning
+          service: apex
+          component: cost
+        annotations:
+          summary: "Daily cost budget exceeded ($100)"
+          description: >
+            Total LLM API spend in the last 24 hours is ${{ $value | humanize }},
+            exceeding the $100 daily budget. Review model routing and task volume.
+          runbook_url: "https://wiki.apex.local/runbooks/cost-overspend"
+          dashboard_url: "https://grafana.apex.local/d/apex-platform-overview"
+
+      # Agent stuck in a reasoning loop
+      - alert: AgentLoopDetected
+        expr: apex_agent_loop_detections_total > 0
+        for: 0m
+        labels:
+          severity: critical
+          service: apex
+          component: agents
+        annotations:
+          summary: "Agent loop detected"
+          description: >
+            An agent loop has been detected ({{ $labels.agent_id }}). The agent
+            may be stuck in a recursive reasoning cycle. The loop detector
+            has fired {{ $value }} time(s).
+          runbook_url: "https://wiki.apex.local/runbooks/agent-loop"
+          dashboard_url: "https://grafana.apex.local/d/apex-agent-detail"
+
+      # P99 latency exceeds 30 seconds
+      - alert: HighLatency
+        expr: >
+          histogram_quantile(0.99,
+            sum(rate(apex_task_duration_seconds_bucket[5m])) by (le)
+          ) > 30
+        for: 5m
+        labels:
+          severity: warning
+          service: apex
+          component: tasks
+        annotations:
+          summary: "P99 task latency above 30 seconds"
+          description: >
+            The 99th percentile task execution latency is {{ $value | humanizeDuration }},
+            exceeding the 30-second threshold for 5 minutes.
+          runbook_url: "https://wiki.apex.local/runbooks/high-latency"
+          dashboard_url: "https://grafana.apex.local/d/apex-platform-overview"
+
+      # Pending task queue is backing up
+      - alert: QueueBacklog
+        expr: apex_redis_queue_depth{queue="pending"} > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: apex
+          component: queue
+        annotations:
+          summary: "Redis pending queue backlog exceeds 100"
+          description: >
+            The pending task queue has {{ $value }} messages and has been above
+            100 for 5 minutes. Workers may be overloaded or failing to process.
+          runbook_url: "https://wiki.apex.local/runbooks/queue-backlog"
+          dashboard_url: "https://grafana.apex.local/d/apex-platform-overview"
+
+      # Worker pool near capacity
+      - alert: WorkerPoolExhausted
+        expr: apex_worker_pool_utilization > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          service: apex
+          component: workers
+        annotations:
+          summary: "Worker pool utilization above 95%"
+          description: >
+            Worker pool utilization is at {{ $value | humanizePercentage }}.
+            The system is running near capacity and new tasks may be queued
+            indefinitely. Consider scaling worker replicas.
+          runbook_url: "https://wiki.apex.local/runbooks/worker-pool-exhausted"
+          dashboard_url: "https://grafana.apex.local/d/apex-platform-overview"
+
+      # All workers are down
+      - alert: NoActiveWorkers
+        expr: apex_workers_active == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: apex
+          component: workers
+        annotations:
+          summary: "No active workers"
+          description: >
+            There are zero active workers for over 1 minute. All task
+            processing has stopped. Check worker deployment and logs
+            immediately.
+          runbook_url: "https://wiki.apex.local/runbooks/no-active-workers"
+          dashboard_url: "https://grafana.apex.local/d/apex-platform-overview"
+
+  - name: apex-agents
+    interval: 30s
+    rules:
+      # No agents are registered or running
+      - alert: NoActiveAgents
+        expr: sum(apex_agents_active) == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: apex
+          component: agents
+        annotations:
+          summary: "No active agents"
+          description: "All agents are down or paused. No tasks can be orchestrated."
+
+      # Individual agent has high error rate
+      - alert: AgentHighErrorRate
+        expr: >
+          sum by (agent_id) (rate(apex_tasks_total{status="failed", agent_id!=""}[5m]))
+          /
+          sum by (agent_id) (rate(apex_tasks_total{agent_id!=""}[5m]))
+          > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: apex
+          component: agents
+        annotations:
+          summary: "Agent {{ $labels.agent_id }} has high error rate"
+          description: >
+            Agent {{ $labels.agent_id }} has a failure rate of
+            {{ $value | humanizePercentage }} over the last 5 minutes.
+
+      # Hourly cost spike
+      - alert: HourlyCostSpike
+        expr: sum(increase(apex_cost_total_dollars[1h])) > 25
+        for: 1m
+        labels:
+          severity: warning
+          service: apex
+          component: cost
+        annotations:
+          summary: "Hourly cost spike detected"
+          description: >
+            Spent ${{ $value | humanize }} in the last hour, exceeding the
+            $25/hour threshold. Investigate model routing decisions.
+
+  - name: apex-infrastructure
+    interval: 30s
+    rules:
+      # PostgreSQL is unreachable
+      - alert: DatabaseDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: apex
+          component: database
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "Cannot connect to the PostgreSQL database. All persistence is affected."
+
+      # Redis is unreachable
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: apex
+          component: cache
+        annotations:
+          summary: "Redis is down"
+          description: "Cannot connect to Redis. Task queuing and caching are affected."
+
+      # PostgreSQL connection pool near exhaustion
+      - alert: DatabaseConnectionPoolExhausted
+        expr: >
+          pg_stat_activity_count{state="active"}
+          /
+          pg_settings_max_connections
+          > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: apex
+          component: database
+        annotations:
+          summary: "PostgreSQL connection pool above 85%"
+          description: >
+            Active database connections are at {{ $value | humanizePercentage }}
+            of max_connections. Consider connection pooling or increasing limits.
+
+      # High memory usage on host
+      - alert: HighMemoryUsage
+        expr: >
+          (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
+          /
+          node_memory_MemTotal_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          service: apex
+          component: infrastructure
+        annotations:
+          summary: "Host memory usage above 90%"
+          description: "Memory usage is {{ $value | humanizePercentage }}. Risk of OOM kills."
+
+      # High CPU usage on host
+      - alert: HighCPUUsage
+        expr: >
+          100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+        for: 5m
+        labels:
+          severity: warning
+          service: apex
+          component: infrastructure
+        annotations:
+          summary: "Host CPU usage above 90%"
+          description: "CPU utilization is {{ $value | humanize }}%."
+
+      # WebSocket connection surge
+      - alert: WebSocketConnectionSurge
+        expr: sum(apex_websocket_connections_active) > 500
+        for: 2m
+        labels:
+          severity: warning
+          service: apex
+          component: api
+        annotations:
+          summary: "High number of WebSocket connections"
+          description: >
+            There are {{ $value }} active WebSocket connections, exceeding
+            the 500 threshold. Check for connection leaks.

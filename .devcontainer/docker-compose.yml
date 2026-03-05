@@ -1,0 +1,323 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Project Apex - Devcontainer Docker Compose
+# Development environment with all services
+# ══════════════════════════════════════════════════════════════════════════════
+
+version: '3.9'
+
+services:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Development Container
+  # ────────────────────────────────────────────────────────────────────────────
+  devcontainer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+      args:
+        USERNAME: apex
+        USER_UID: 1000
+        USER_GID: 1000
+    container_name: apex-devcontainer
+    hostname: apex-dev
+
+    # Keep container running
+    command: sleep infinity
+
+    # Enable Docker-in-Docker
+    privileged: true
+
+    volumes:
+      # Mount workspace
+      - ..:/workspace:cached
+
+      # Docker socket for Docker-in-Docker
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # Persist Rust build cache
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+      - rust-target:/workspace/src/backend/core/target
+
+      # Persist node_modules
+      - node-modules-frontend:/workspace/src/frontend/node_modules
+
+      # Persist Python cache
+      - pip-cache:/root/.cache/pip
+      - uv-cache:/root/.cache/uv
+
+      # VS Code server data
+      - vscode-server:/home/apex/.vscode-server
+
+    environment:
+      # Development environment
+      - APEX_ENVIRONMENT=development
+      - APEX_LOG_LEVEL=DEBUG
+      - APEX_LOG_JSON=false
+      - RUST_LOG=debug,apex_core=trace
+      - RUST_BACKTRACE=1
+
+      # Database connections
+      - DATABASE_URL=postgres://apex:apex_secret@postgres:5432/apex
+      - REDIS_URL=redis://redis:6379
+
+      # Observability
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_SERVICE_NAME=apex-dev
+
+      # API URLs for frontend
+      - VITE_API_URL=http://localhost:8080/api/v1
+      - VITE_WS_URL=ws://localhost:8080/ws
+
+      # SSH agent forwarding
+      - SSH_AUTH_SOCK=/ssh-agent
+
+    ports:
+      # API ports
+      - "8080:8080"     # HTTP API
+      - "50051:50051"   # gRPC API
+      - "9090:9090"     # Prometheus metrics
+
+      # Frontend development
+      - "3000:3000"     # Vite dev server
+      - "6006:6006"     # Storybook
+
+      # Worker
+      - "8081:8081"     # Worker health/metrics
+
+    networks:
+      - apex-network
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # PostgreSQL Database
+  # ────────────────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: apex-dev-postgres
+    hostname: postgres
+
+    environment:
+      - POSTGRES_USER=apex
+      - POSTGRES_PASSWORD=apex_secret
+      - POSTGRES_DB=apex
+      - PGDATA=/var/lib/postgresql/data/pgdata
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../src/backend/core/migrations:/docker-entrypoint-initdb.d:ro
+
+    networks:
+      - apex-network
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apex -d apex"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Redis Cache
+  # ────────────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: apex-dev-redis
+    hostname: redis
+
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redis-data:/data
+
+    networks:
+      - apex-network
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Jaeger (Tracing)
+  # ────────────────────────────────────────────────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.53
+    container_name: apex-dev-jaeger
+    hostname: jaeger
+
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+
+    networks:
+      - apex-network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Prometheus (Metrics)
+  # ────────────────────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.48.1
+    container_name: apex-dev-prometheus
+    hostname: prometheus
+
+    ports:
+      - "9091:9090"
+
+    volumes:
+      - ../infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+
+    networks:
+      - apex-network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Grafana (Dashboards)
+  # ────────────────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: apex-dev-grafana
+    hostname: grafana
+
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+
+    ports:
+      - "3001:3000"
+
+    volumes:
+      - ../infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+
+    networks:
+      - apex-network
+
+    depends_on:
+      - prometheus
+      - jaeger
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # MailHog (Email Testing)
+  # ────────────────────────────────────────────────────────────────────────────
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: apex-dev-mailhog
+    hostname: mailhog
+
+    ports:
+      - "1025:1025"     # SMTP
+      - "8025:8025"     # Web UI
+
+    networks:
+      - apex-network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Networks
+# ══════════════════════════════════════════════════════════════════════════════
+
+networks:
+  apex-network:
+    driver: bridge
+    name: apex-dev-network
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Volumes
+# ══════════════════════════════════════════════════════════════════════════════
+
+volumes:
+  # Database persistence
+  postgres-data:
+    name: apex-dev-postgres-data
+  redis-data:
+    name: apex-dev-redis-data
+
+  # Build caches
+  cargo-registry:
+    name: apex-dev-cargo-registry
+  cargo-git:
+    name: apex-dev-cargo-git
+  rust-target:
+    name: apex-dev-rust-target
+  node-modules-frontend:
+    name: apex-dev-node-modules
+  pip-cache:
+    name: apex-dev-pip-cache
+  uv-cache:
+    name: apex-dev-uv-cache
+
+  # VS Code
+  vscode-server:
+    name: apex-dev-vscode-server
+
+  # Observability
+  prometheus-data:
+    name: apex-dev-prometheus-data
+  grafana-data:
+    name: apex-dev-grafana-data

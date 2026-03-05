@@ -1,0 +1,482 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Project Apex - Staging Configuration
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# This configuration is for staging/pre-production environment with:
+#   - Production-like settings for realistic testing
+#   - Moderate logging (info level)
+#   - Enhanced security with some debugging capabilities
+#   - Realistic rate limits
+#
+# Usage:
+#   APEX_CONFIG=config/staging.toml ./apex-server
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ==============================================================================
+# ENVIRONMENT
+# ==============================================================================
+
+[environment]
+name = "staging"
+debug = false
+log_level = "info"
+
+# ==============================================================================
+# SERVER CONFIGURATION
+# ==============================================================================
+
+[server]
+# HTTP/REST API settings
+host = "0.0.0.0"
+port = 8080
+workers = 8                          # Increased for staging load testing
+keep_alive = 75
+shutdown_timeout = 60                # Longer shutdown for graceful termination
+
+# Request handling
+max_request_size = "10MB"
+request_timeout = 120                # Allow longer requests for complex tasks
+
+# TLS (enabled for staging)
+tls_enabled = true
+tls_cert_path = "/etc/apex/certs/server.crt"
+tls_key_path = "/etc/apex/certs/server.key"
+
+[server.grpc]
+enabled = true
+port = 50051
+max_message_size = "16MB"
+reflection_enabled = false           # Disabled for security
+
+# ==============================================================================
+# DATABASE (PostgreSQL)
+# ==============================================================================
+
+[database]
+# Connection URL (set via DATABASE_URL env var in staging)
+url = "postgres://apex:${DB_PASSWORD}@staging-db.internal:5432/apex_staging"
+
+# Connection pool settings - sized for staging load
+min_connections = 5
+max_connections = 25
+acquire_timeout = 15
+idle_timeout = 600
+max_lifetime = 3600
+
+# Query settings
+statement_cache_size = 200
+log_queries = false
+log_slow_queries_ms = 500            # Only log queries > 500ms
+
+# Migrations
+run_migrations_on_startup = false    # Migrations run separately in staging
+migrations_path = "./migrations"
+
+[database.ssl]
+enabled = true
+mode = "require"
+ca_cert_path = "/etc/apex/certs/db-ca.crt"
+# client_cert_path = ""
+# client_key_path = ""
+
+# Read replicas for load distribution
+[database.replicas]
+enabled = true
+urls = [
+    "postgres://apex:${DB_PASSWORD}@staging-db-replica-1.internal:5432/apex_staging",
+    "postgres://apex:${DB_PASSWORD}@staging-db-replica-2.internal:5432/apex_staging",
+]
+read_from_replicas = true
+replica_selection = "round_robin"    # round_robin, random, least_connections
+
+# ==============================================================================
+# CACHE (Redis)
+# ==============================================================================
+
+[cache]
+enabled = true
+url = "redis://:${REDIS_PASSWORD}@staging-redis.internal:6379"
+
+# Connection pool
+pool_size = 10
+connection_timeout = 10
+
+# Default TTLs (seconds)
+default_ttl = 3600
+session_ttl = 86400
+model_response_ttl = 3600            # 1 hour in staging
+
+# Key prefixes
+key_prefix = "apex:staging:"
+
+[cache.cluster]
+enabled = false                      # Single node in staging (enable for cluster)
+# nodes = [
+#     "redis://staging-redis-1.internal:6379",
+#     "redis://staging-redis-2.internal:6379",
+#     "redis://staging-redis-3.internal:6379",
+# ]
+
+# ==============================================================================
+# MESSAGE QUEUE
+# ==============================================================================
+
+[queue]
+backend = "redis"
+url = "redis://:${REDIS_PASSWORD}@staging-redis.internal:6379"
+
+[queue.redis]
+queue_prefix = "apex:queue:staging:"
+processing_timeout = 600
+retry_attempts = 3
+retry_delay = 10
+visibility_timeout = 60
+
+[queue.queues.default]
+name = "default"
+priority = 1
+max_workers = 8
+
+[queue.queues.high_priority]
+name = "high_priority"
+priority = 10
+max_workers = 4
+
+[queue.queues.low_priority]
+name = "low_priority"
+priority = 0
+max_workers = 4
+
+[queue.dead_letter]
+enabled = true
+max_retries = 5
+ttl = 604800
+
+# ==============================================================================
+# OBSERVABILITY
+# ==============================================================================
+
+[observability]
+service_name = "apex-server"
+service_version = "0.1.0"
+environment = "staging"
+
+[observability.logging]
+level = "info"
+format = "json"                      # JSON for log aggregation
+output = "stdout"
+include_file_line = false
+include_target = true
+
+filters = [
+    "hyper=warn",
+    "tower=warn",
+    "sqlx=error",
+    "tokio_postgres=error",
+]
+
+[observability.logging.file]
+enabled = false                      # Use container stdout for logging
+
+[observability.tracing]
+enabled = true
+exporter = "otlp"
+endpoint = "http://jaeger.observability.internal:4317"
+sample_rate = 0.5                    # Sample 50% in staging
+propagation = "w3c"
+
+include_db_queries = true
+include_http_headers = false
+include_request_body = false
+
+[observability.metrics]
+enabled = true
+exporter = "prometheus"
+endpoint = "/metrics"
+port = 9090
+include_process_metrics = true
+include_runtime_metrics = true
+
+[observability.metrics.histograms]
+request_duration_buckets = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+model_latency_buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0]
+
+[observability.health]
+enabled = true
+endpoint = "/health"
+include_details = true
+
+# ==============================================================================
+# API SETTINGS
+# ==============================================================================
+
+[api]
+version = "v1"
+prefix = "/api/v1"
+
+[api.cors]
+enabled = true
+allow_origins = [
+    "https://staging.apex.example.com",
+    "https://staging-app.apex.example.com",
+]
+allow_methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+allow_headers = ["Authorization", "Content-Type", "X-API-Key", "X-Request-Id"]
+expose_headers = ["X-Request-Id", "X-Trace-Id", "X-RateLimit-Remaining"]
+allow_credentials = true
+max_age = 3600
+
+[api.validation]
+strict_mode = true
+max_body_size = "10MB"
+max_json_depth = 32
+
+[api.pagination]
+default_page_size = 20
+max_page_size = 100
+
+[api.response]
+include_request_id = true
+include_trace_id = true
+include_timing = true
+include_debug_info = false           # No debug info in staging
+
+# ==============================================================================
+# WORKER SETTINGS
+# ==============================================================================
+
+[worker]
+enabled = true
+name = "apex-worker-staging"
+
+max_concurrent_tasks = 25
+max_concurrent_agents = 100
+task_buffer_size = 200
+
+[worker.execution]
+default_timeout = 300
+max_timeout = 900                    # 15 minutes max
+poll_interval = 2
+
+[worker.agents]
+max_steps = 200
+max_tool_calls = 100
+default_memory_limit = "1GB"
+execution_timeout = 600
+
+[worker.heartbeat]
+enabled = true
+interval = 15
+timeout = 45
+
+# ==============================================================================
+# MODEL ROUTING (FrugalGPT)
+# ==============================================================================
+
+[model_routing]
+enabled = true
+strategy = "frugalgpt"
+
+[model_routing.defaults]
+token_limit = 50000
+cost_limit = 0.50
+time_limit = 600
+
+[model_routing.frugalgpt]
+quality_threshold = 0.75
+enable_caching = true
+cache_ttl = 3600
+
+cascade = [
+    { name = "gpt-3.5-turbo", provider = "openai", max_tokens = 4096 },
+    { name = "gpt-4-turbo", provider = "openai", max_tokens = 8192 },
+    { name = "gpt-4", provider = "openai", max_tokens = 8192 },
+    { name = "claude-3-sonnet", provider = "anthropic", max_tokens = 8192 },
+    { name = "claude-3-opus", provider = "anthropic", max_tokens = 8192 },
+]
+
+[model_routing.frugalgpt.scoring]
+coherence_weight = 0.3
+completeness_weight = 0.3
+relevance_weight = 0.4
+
+[model_routing.providers.openai]
+enabled = true
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://api.openai.com/v1"
+timeout = 120
+max_retries = 3
+retry_delay = 2
+
+[model_routing.providers.anthropic]
+enabled = true
+api_key_env = "ANTHROPIC_API_KEY"
+base_url = "https://api.anthropic.com"
+timeout = 120
+max_retries = 3
+retry_delay = 2
+
+[model_routing.models."gpt-3.5-turbo"]
+provider = "openai"
+context_window = 16385
+cost_per_1k_input = 0.0005
+cost_per_1k_output = 0.0015
+average_latency_ms = 500
+
+[model_routing.models."gpt-4-turbo"]
+provider = "openai"
+context_window = 128000
+cost_per_1k_input = 0.01
+cost_per_1k_output = 0.03
+average_latency_ms = 2000
+
+[model_routing.models."gpt-4"]
+provider = "openai"
+context_window = 8192
+cost_per_1k_input = 0.03
+cost_per_1k_output = 0.06
+average_latency_ms = 3000
+
+[model_routing.models."claude-3-sonnet"]
+provider = "anthropic"
+context_window = 200000
+cost_per_1k_input = 0.003
+cost_per_1k_output = 0.015
+average_latency_ms = 1500
+
+[model_routing.models."claude-3-opus"]
+provider = "anthropic"
+context_window = 200000
+cost_per_1k_input = 0.015
+cost_per_1k_output = 0.075
+average_latency_ms = 5000
+
+# ==============================================================================
+# RATE LIMITING
+# ==============================================================================
+
+[rate_limiting]
+enabled = true
+backend = "redis"
+
+[rate_limiting.global]
+requests_per_second = 500
+burst_size = 50
+
+[rate_limiting.per_client]
+requests_per_minute = 300
+requests_per_hour = 5000
+burst_size = 30
+
+[rate_limiting.endpoints."/api/v1/chat/completions"]
+requests_per_minute = 60
+burst_size = 15
+
+[rate_limiting.endpoints."/api/v1/agents/execute"]
+requests_per_minute = 30
+burst_size = 10
+
+[rate_limiting.cost]
+enabled = true
+daily_limit = 25.0
+monthly_limit = 250.0
+
+[rate_limiting.headers]
+include_limit = true
+include_remaining = true
+include_reset = true
+
+# ==============================================================================
+# SECURITY SETTINGS
+# ==============================================================================
+
+[security]
+encryption_key_env = "APEX_ENCRYPTION_KEY"
+
+[security.jwt]
+secret_env = "JWT_SECRET"
+algorithm = "RS256"                  # Use RSA in staging/prod
+issuer = "apex-staging"
+audience = ["apex-api"]
+expiry_hours = 12
+refresh_expiry_days = 3
+include_user_claims = true
+
+# RSA key paths for RS256
+public_key_path = "/etc/apex/keys/jwt-public.pem"
+private_key_path = "/etc/apex/keys/jwt-private.pem"
+
+[security.api_keys]
+enabled = true
+header_name = "X-API-Key"
+hash_algorithm = "argon2"
+
+[security.request]
+max_input_length = 100000
+sanitize_html = true
+block_script_tags = true
+require_signature = false
+
+[security.audit]
+enabled = true
+log_successful_auth = true
+log_failed_auth = true
+log_api_access = true
+log_sensitive_operations = true
+
+[security.sandbox]
+enabled = true
+network_access = "restricted"
+allowed_hosts = [
+    "api.github.com",
+    "api.openai.com",
+    "api.anthropic.com",
+    "*.googleapis.com",
+]
+filesystem_access = "none"
+max_execution_time = 60
+max_memory = "512MB"
+max_processes = 20
+
+[security.ip_filter]
+enabled = false
+# allowlist = []
+# blocklist = []
+
+# ==============================================================================
+# FEATURE FLAGS
+# ==============================================================================
+
+[features]
+new_agent_runtime = true
+enhanced_caching = true
+model_fallback = true
+streaming_responses = true
+websocket_support = true
+grpc_api = true
+
+[features.experimental]
+multi_agent_orchestration = true
+code_interpreter = true
+web_browsing = false
+file_upload = true
+
+# ==============================================================================
+# STAGING-SPECIFIC SETTINGS
+# ==============================================================================
+
+[staging]
+# Data retention (shorter in staging)
+data_retention_days = 30
+
+# Synthetic data generation for load testing
+[staging.load_testing]
+enabled = false                      # Enable when running load tests
+synthetic_users = 100
+synthetic_requests_per_minute = 500
+
+# Integration test settings
+[staging.integration]
+test_api_key = "${STAGING_TEST_API_KEY}"
+test_user_id = "test-user-staging"

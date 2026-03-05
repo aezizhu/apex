@@ -1,0 +1,105 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Project Apex - Dashboard Dockerfile (Optimized)
+# Multi-stage build for production React app with minimal footprint
+# ══════════════════════════════════════════════════════════════════════════════
+
+# syntax=docker/dockerfile:1.7
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 1: Dependencies - Install node modules
+# ─────────────────────────────────────────────────────────────────────────────
+FROM node:20-alpine AS deps
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* ./
+
+# Install dependencies based on available lock file
+RUN --mount=type=cache,target=/root/.npm \
+    if [ -f pnpm-lock.yaml ]; then \
+        corepack enable pnpm && pnpm install --frozen-lockfile; \
+    elif [ -f yarn.lock ]; then \
+        yarn install --frozen-lockfile; \
+    elif [ -f package-lock.json ]; then \
+        npm ci --legacy-peer-deps; \
+    else \
+        npm install --legacy-peer-deps; \
+    fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 2: Builder - Build the application
+# ─────────────────────────────────────────────────────────────────────────────
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Build arguments for environment configuration
+ARG VITE_API_URL=http://localhost:8080/api/v1
+ARG VITE_WS_URL=ws://localhost:8080/ws
+ARG VITE_ENABLE_MOCK=false
+
+ENV VITE_API_URL=$VITE_API_URL \
+    VITE_WS_URL=$VITE_WS_URL \
+    VITE_ENABLE_MOCK=$VITE_ENABLE_MOCK \
+    NODE_ENV=production
+
+# Build the application
+RUN npm run build
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 3: Production - Serve with nginx
+# ─────────────────────────────────────────────────────────────────────────────
+FROM nginx:1.25-alpine AS production
+
+# Labels
+LABEL org.opencontainers.image.title="Apex Dashboard" \
+      org.opencontainers.image.description="React dashboard for Project Apex" \
+      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.authors="Aezi <aezi.zhu@icloud.com>" \
+      org.opencontainers.image.source="https://github.com/apex-swarm/apex"
+
+# Install tini for signal handling
+RUN apk add --no-cache tini curl
+
+# Create non-root user
+RUN addgroup -g 1000 apex \
+    && adduser -D -u 1000 -G apex apex
+
+# Remove default nginx config
+RUN rm -rf /etc/nginx/conf.d/default.conf /usr/share/nginx/html/*
+
+# Copy custom nginx config
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Copy built assets
+COPY --from=builder --chown=apex:apex /app/dist /usr/share/nginx/html
+
+# Create nginx cache and log directories with proper permissions
+RUN mkdir -p /var/cache/nginx /var/log/nginx /var/run \
+    && chown -R apex:apex /var/cache/nginx /var/log/nginx /var/run \
+    && chmod -R 755 /var/cache/nginx /var/log/nginx
+
+# Create nginx pid file location
+RUN touch /var/run/nginx.pid \
+    && chown apex:apex /var/run/nginx.pid
+
+# Switch to non-root user
+USER apex
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:80/health || exit 1
+
+# Expose port
+EXPOSE 80
+
+# Use tini as init system
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Run nginx in foreground
+CMD ["nginx", "-g", "daemon off;"]

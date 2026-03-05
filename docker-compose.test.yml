@@ -1,0 +1,242 @@
+# ============================================================================
+# Project Apex - Docker Compose Test Configuration
+# ============================================================================
+#
+# Runs the full test suite inside containers with isolated dependencies.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml up --abort-on-container-exit
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm test-rust
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm test-python
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm test-frontend
+#
+# ============================================================================
+
+services:
+  # ==========================================================================
+  # TEST SERVICES
+  # ==========================================================================
+
+  test-rust:
+    build:
+      context: ./src/backend/core
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      - RUST_LOG=debug,apex_core=trace
+      - RUST_BACKTRACE=1
+      - DATABASE_URL=postgres://apex:apex_test@postgres-test:5432/apex_test
+      - REDIS_URL=redis://redis-test:6379
+      - APEX_ENV=test
+    command: cargo test --workspace -- --test-threads=4
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    networks:
+      - apex-test
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  test-python:
+    build:
+      context: ./src/backend/agents
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - DATABASE_URL=postgres://apex:apex_test@postgres-test:5432/apex_test
+      - REDIS_URL=redis://redis-test:6379
+      - APEX_ENV=test
+      - APEX_MOCK_LLM=true
+    command: >
+      sh -c "pip install pytest pytest-cov pytest-asyncio &&
+             pytest --cov=apex_agents --cov-report=xml:/app/coverage.xml --cov-report=term -v"
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    networks:
+      - apex-test
+    volumes:
+      - test-coverage:/app/coverage
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  test-frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      - NODE_ENV=test
+      - CI=true
+    command: npm test -- --coverage --watchAll=false
+    networks:
+      - apex-test
+    volumes:
+      - test-coverage:/app/coverage
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  test-integration:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    environment:
+      - DATABASE_URL=postgres://apex:apex_test@postgres-test:5432/apex_test
+      - REDIS_URL=redis://redis-test:6379
+      - APEX_ENV=test
+      - APEX_API_URL=http://apex-api-test:8080
+      - APEX_MOCK_LLM=true
+    command: >
+      sh -c "cd /workspace && ./scripts/integration-test.sh"
+    depends_on:
+      apex-api-test:
+        condition: service_healthy
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    networks:
+      - apex-test
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  # ==========================================================================
+  # TEST SUPPORT SERVICES
+  # ==========================================================================
+
+  apex-api-test:
+    build:
+      context: ./src/backend/core
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      - RUST_LOG=info,apex_core=debug
+      - DATABASE_URL=postgres://apex:apex_test@postgres-test:5432/apex_test
+      - REDIS_URL=redis://redis-test:6379
+      - APEX_ENV=test
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    networks:
+      - apex-test
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=apex
+      - POSTGRES_PASSWORD=apex_test
+      - POSTGRES_DB=apex_test
+    tmpfs:
+      - /var/lib/postgresql/data  # Use tmpfs for test speed
+    networks:
+      - apex-test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apex -d apex_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "1"
+
+  redis-test:
+    image: redis:7-alpine
+    command: redis-server --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
+    tmpfs:
+      - /data
+    networks:
+      - apex-test
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "1"
+
+# ============================================================================
+# NETWORKS
+# ============================================================================
+
+networks:
+  apex-test:
+    driver: bridge
+
+# ============================================================================
+# VOLUMES
+# ============================================================================
+
+volumes:
+  test-coverage:
+    driver: local

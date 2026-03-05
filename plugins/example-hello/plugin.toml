@@ -1,0 +1,17 @@
+name = "example-hello"
+version = "0.1.0"
+description = "A minimal example plugin that greets the user. Use this as a template for building Apex plugins."
+author = "Apex Team"
+license = "Apache-2.0"
+homepage = "https://github.com/apex-swarm/apex"
+
+capabilities = ["tool_execution"]
+permissions = []
+dependencies = []
+
+min_apex_version = "0.1.0"
+entry_point = "hello.wasm"
+
+[metadata]
+category = "example"
+tags = ["hello", "demo", "template"]
