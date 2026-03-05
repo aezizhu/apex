@@ -311,8 +311,8 @@ export interface FilterParams {
 
 import { z } from 'zod'
 
-// BaseSocket messages
-const schema for all Web wsMessageBaseSchema = z.object({
+// Base schema for all WebSocket messages
+const wsMessageBaseSchema = z.object({
   type: z.string(),
 })
 

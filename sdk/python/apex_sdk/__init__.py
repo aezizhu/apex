@@ -48,6 +48,7 @@ from .models import (
     AgentCapability,
     AgentCreate,
     AgentList,
+    AgentStats,
     AgentStatus,
     AgentUpdate,
     Approval,
@@ -59,8 +60,11 @@ from .models import (
     DAG,
     DAGCreate,
     DAGEdge,
+    DAGExecution,
+    DAGExecutionList,
     DAGList,
     DAGNode,
+    DAGNodeExecution,
     DAGStatus,
     DAGTaskStatus,
     DAGUpdate,
@@ -72,6 +76,8 @@ from .models import (
     TaskError,
     TaskInput,
     TaskList,
+    TaskLog,
+    TaskLogList,
     TaskOutput,
     TaskPriority,
     TaskStatus,
@@ -82,7 +88,7 @@ from .models import (
 )
 from .websocket import ApexWebSocketClient
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 __all__ = [
     # Version
@@ -114,11 +120,14 @@ __all__ = [
     "TaskList",
     "TaskStatus",
     "TaskPriority",
+    "TaskLog",
+    "TaskLogList",
     # Agent Models
     "Agent",
     "AgentCreate",
     "AgentUpdate",
     "AgentCapability",
+    "AgentStats",
     "AgentList",
     "AgentStatus",
     # DAG Models
@@ -130,6 +139,9 @@ __all__ = [
     "DAGTaskStatus",
     "DAGList",
     "DAGStatus",
+    "DAGExecution",
+    "DAGExecutionList",
+    "DAGNodeExecution",
     # Approval Models
     "Approval",
     "ApprovalCreate",

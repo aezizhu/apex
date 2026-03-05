@@ -160,14 +160,25 @@ impl Agent {
             self.current_load.load(Ordering::Relaxed) < self.max_load
     }
 
-    /// Acquire a slot (increment load).
+    /// Acquire a slot using compare-and-swap (CAS) for proper lock-free implementation.
+    /// Returns true if slot was acquired, false if at capacity.
     pub fn acquire_slot(&self) -> bool {
-        let current = self.current_load.fetch_add(1, Ordering::SeqCst);
-        if current >= self.max_load {
-            self.current_load.fetch_sub(1, Ordering::SeqCst);
-            return false;
+        loop {
+            let current = self.current_load.load(Ordering::SeqCst);
+            if current >= self.max_load {
+                return false;
+            }
+            // Try to atomically increment from current to current + 1
+            if self.current_load.compare_exchange(
+                current,
+                current + 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ).is_ok() {
+                return true;
+            }
+            // CAS failed (another thread modified the value), retry
         }
-        true
     }
 
     /// Release a slot (decrement load).

@@ -2,10 +2,14 @@ import { useEffect, useRef } from 'react'
 import { useStore } from '../lib/store'
 import { agentApi, taskApi, metricsApi, approvalApi, settingsApi } from '../lib/api'
 import type { Agent, Task } from '../lib/store'
+import toast from 'react-hot-toast'
 
 /**
  * Fetches initial data from the backend API and populates the Zustand store.
  * Also sets up periodic polling for metrics (every 30s).
+ *
+ * FIX Issue #5: This hook centralizes data fetching to prevent duplicate fetching across pages.
+ * Other pages should NOT fetch data independently - they should rely on this hook and WebSocket updates.
  */
 export function useInitialData() {
   const { setAgents, setTasks, setMetrics, setApprovals, setSettings, setApiKeys } = useStore()
@@ -38,6 +42,8 @@ export function useInitialData() {
         }
       } catch (err) {
         console.warn('[Init] Failed to fetch agents:', err)
+        // FIX Issue #6: Show toast notification for fetch errors
+        toast.error('Failed to load agents')
       }
 
       // Fetch tasks
@@ -61,6 +67,8 @@ export function useInitialData() {
         }
       } catch (err) {
         console.warn('[Init] Failed to fetch tasks:', err)
+        // FIX Issue #6: Show toast notification for fetch errors
+        toast.error('Failed to load tasks')
       }
 
       // Fetch metrics
@@ -71,6 +79,8 @@ export function useInitialData() {
         }
       } catch (err) {
         console.warn('[Init] Failed to fetch metrics:', err)
+        // FIX Issue #6: Show toast notification for fetch errors
+        toast.error('Failed to load metrics')
       }
 
       // Fetch approvals
@@ -82,6 +92,8 @@ export function useInitialData() {
         }
       } catch (err) {
         console.warn('[Init] Failed to fetch approvals:', err)
+        // FIX Issue #6: Show toast notification for fetch errors
+        toast.error('Failed to load approvals')
       }
 
       // Fetch settings (for store cache)

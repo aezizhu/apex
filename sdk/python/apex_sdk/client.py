@@ -108,6 +108,7 @@ class BaseApexClient:
         timeout: float = 30.0,
         max_retries: int = 3,
         retry_delay: float = 1.0,
+        api_prefix: str = "/api/v1",
     ) -> None:
         """Initialise connection settings shared by sync and async clients.
 
@@ -127,6 +128,7 @@ class BaseApexClient:
                 transient errors (5xx, connection errors, timeouts).
             retry_delay: Initial delay (in seconds) between retries. The delay
                 grows exponentially on subsequent attempts.
+            api_prefix: API version prefix added to all endpoints (default "/api/v1").
         """
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -134,6 +136,7 @@ class BaseApexClient:
         self.timeout = timeout
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.api_prefix = api_prefix
 
     def _get_headers(self) -> dict[str, str]:
         """Build default HTTP headers including authentication.
@@ -258,7 +261,7 @@ class ApexClient(BaseApexClient):
 
     @retry(
         retry=retry_if_exception_type((ApexServerError, ApexConnectionError, ApexTimeoutError)),
-        stop=stop_after_attempt(3),
+        stop=stop_after_attempt(lambda: self.max_retries),
         wait=wait_exponential(multiplier=1, min=1, max=60),
         reraise=True,
     )
@@ -285,10 +288,11 @@ class ApexClient(BaseApexClient):
             ApexTimeoutError: Request exceeded the configured timeout.
             ApexAPIError: The server returned a non-success status code.
         """
+        full_path = f"{self.api_prefix}{path}"
         try:
             response = self._client.request(
                 method,
-                path,
+                full_path,
                 params=params,
                 json=json_data,
             )
@@ -303,7 +307,11 @@ class ApexClient(BaseApexClient):
         if response.status_code == 204:
             return {}
 
-        return response.json()
+        data = response.json()
+        if isinstance(data, dict) and "success" in data:
+            if data["success"] and "data" in data:
+                return data["data"]
+        return data
 
     def _paginated_request(
         self,
@@ -486,6 +494,86 @@ class ApexClient(BaseApexClient):
             ApexNotFoundError: No task exists with the given ID.
         """
         data = self._request("POST", f"/tasks/{task_id}/retry")
+        return Task(**data)
+
+    def get_task_logs(
+        self,
+        task_id: str,
+        limit: int = 100,
+        offset: int = 0,
+        level: str | None = None,
+    ) -> dict[str, Any]:
+        """Retrieve logs for a specific task.
+
+        Args:
+            task_id: UUID of the task.
+            limit: Maximum number of log entries to return.
+            offset: Number of log entries to skip.
+            level: Filter by log level (e.g. ``"info"``, ``"error"``).
+
+        Returns:
+            A dictionary containing log entries.
+        """
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if level:
+            params["level"] = level
+        return self._request("GET", f"/tasks/{task_id}/logs", params=params)
+
+    def get_child_tasks(
+        self,
+        task_id: str,
+        page: int = 1,
+        per_page: int = 50,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """Retrieve child tasks of a specific task.
+
+        Args:
+            task_id: UUID of the parent task.
+            page: Page number (1-indexed).
+            per_page: Number of child tasks per page.
+            status: Filter by task status.
+
+        Returns:
+            A dictionary containing child tasks.
+        """
+        params: dict[str, Any] = {}
+        if status:
+            params["status"] = status
+        return self._paginated_request(f"/tasks/{task_id}/children", params, page, per_page)
+
+    def assign_task(self, agent_id: str, task_id: str) -> Task:
+        """Assign a task to a specific agent.
+
+        Args:
+            agent_id: UUID of the agent to assign.
+            task_id: UUID of the task to assign.
+
+        Returns:
+            The :class:`Task` with updated assignment.
+        """
+        data = self._request(
+            "POST",
+            f"/tasks/{task_id}/assign",
+            json_data={"agentId": agent_id},
+        )
+        return Task(**data)
+
+    def unassign_task(self, agent_id: str, task_id: str) -> Task:
+        """Unassign a task from a specific agent.
+
+        Args:
+            agent_id: UUID of the agent to unassign.
+            task_id: UUID of the task to unassign.
+
+        Returns:
+            The :class:`Task` with updated assignment.
+        """
+        data = self._request(
+            "POST",
+            f"/tasks/{task_id}/unassign",
+            json_data={"agentId": agent_id},
+        )
         return Task(**data)
 
     # -------------------------------------------------------------------------
@@ -746,6 +834,37 @@ class ApexClient(BaseApexClient):
         data = self._request("POST", f"/dags/{dag_id}/resume")
         return DAG(**data)
 
+    def get_dag_executions(
+        self,
+        dag_id: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Retrieve executions of a DAG.
+
+        Args:
+            dag_id: UUID of the DAG.
+            limit: Maximum number of executions to return.
+            offset: Number of executions to skip.
+
+        Returns:
+            A dictionary containing DAG executions.
+        """
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        return self._request("GET", f"/dags/{dag_id}/executions", params=params)
+
+    def get_dag_execution(self, dag_id: str, execution_id: str) -> dict[str, Any]:
+        """Retrieve a specific DAG execution.
+
+        Args:
+            dag_id: UUID of the DAG.
+            execution_id: UUID of the execution.
+
+        Returns:
+            A dictionary containing the DAG execution details.
+        """
+        return self._request("GET", f"/dags/{dag_id}/executions/{execution_id}")
+
     # -------------------------------------------------------------------------
     # Approvals
     # -------------------------------------------------------------------------
@@ -839,6 +958,32 @@ class ApexClient(BaseApexClient):
         )
         return Approval(**data)
 
+    def cancel_approval(self, approval_id: str) -> Approval:
+        """Cancel a pending approval request.
+
+        Args:
+            approval_id: UUID of the approval to cancel.
+
+        Returns:
+            The :class:`Approval` in ``cancelled`` status.
+        """
+        data = self._request("POST", f"/approvals/{approval_id}/cancel")
+        return Approval(**data)
+
+    def get_pending_approvals(self, approver_id: str | None = None) -> dict[str, Any]:
+        """Retrieve pending approvals.
+
+        Args:
+            approver_id: Optional filter by approver ID.
+
+        Returns:
+            A dictionary containing pending approvals.
+        """
+        params: dict[str, Any] = {}
+        if approver_id:
+            params["approverId"] = approver_id
+        return self._request("GET", "/approvals/pending", params=params)
+
 
 class AsyncApexClient(BaseApexClient):
     """Asynchronous HTTP client for the Apex Agent Swarm API.
@@ -866,8 +1011,9 @@ class AsyncApexClient(BaseApexClient):
         timeout: float = 30.0,
         max_retries: int = 3,
         retry_delay: float = 1.0,
+        api_prefix: str = "/api/v1",
     ) -> None:
-        super().__init__(base_url, api_key, token, timeout, max_retries, retry_delay)
+        super().__init__(base_url, api_key, token, timeout, max_retries, retry_delay, api_prefix)
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             headers=self._get_headers(),
@@ -893,7 +1039,7 @@ class AsyncApexClient(BaseApexClient):
 
     @retry(
         retry=retry_if_exception_type((ApexServerError, ApexConnectionError, ApexTimeoutError)),
-        stop=stop_after_attempt(3),
+        stop=stop_after_attempt(lambda: self.max_retries),
         wait=wait_exponential(multiplier=1, min=1, max=60),
         reraise=True,
     )
@@ -920,10 +1066,11 @@ class AsyncApexClient(BaseApexClient):
             ApexTimeoutError: Request exceeded the configured timeout.
             ApexAPIError: The server returned a non-success status code.
         """
+        full_path = f"{self.api_prefix}{path}"
         try:
             response = await self._client.request(
                 method,
-                path,
+                full_path,
                 params=params,
                 json=json_data,
             )
@@ -938,7 +1085,11 @@ class AsyncApexClient(BaseApexClient):
         if response.status_code == 204:
             return {}
 
-        return response.json()
+        data = response.json()
+        if isinstance(data, dict) and "success" in data:
+            if data["success"] and "data" in data:
+                return data["data"]
+        return data
 
     async def _paginated_request(
         self,
@@ -1123,6 +1274,86 @@ class AsyncApexClient(BaseApexClient):
             The :class:`Task` reset to ``pending`` status.
         """
         data = await self._request("POST", f"/tasks/{task_id}/retry")
+        return Task(**data)
+
+    async def get_task_logs(
+        self,
+        task_id: str,
+        limit: int = 100,
+        offset: int = 0,
+        level: str | None = None,
+    ) -> dict[str, Any]:
+        """Retrieve logs for a specific task.
+
+        Args:
+            task_id: UUID of the task.
+            limit: Maximum number of log entries to return.
+            offset: Number of log entries to skip.
+            level: Filter by log level.
+
+        Returns:
+            A dictionary containing log entries.
+        """
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if level:
+            params["level"] = level
+        return await self._request("GET", f"/tasks/{task_id}/logs", params=params)
+
+    async def get_child_tasks(
+        self,
+        task_id: str,
+        page: int = 1,
+        per_page: int = 50,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """Retrieve child tasks of a specific task.
+
+        Args:
+            task_id: UUID of the parent task.
+            page: Page number (1-indexed).
+            per_page: Number of child tasks per page.
+            status: Filter by task status.
+
+        Returns:
+            A dictionary containing child tasks.
+        """
+        params: dict[str, Any] = {}
+        if status:
+            params["status"] = status
+        return await self._paginated_request(f"/tasks/{task_id}/children", params, page, per_page)
+
+    async def assign_task(self, agent_id: str, task_id: str) -> Task:
+        """Assign a task to a specific agent.
+
+        Args:
+            agent_id: UUID of the agent to assign.
+            task_id: UUID of the task to assign.
+
+        Returns:
+            The :class:`Task` with updated assignment.
+        """
+        data = await self._request(
+            "POST",
+            f"/tasks/{task_id}/assign",
+            json_data={"agentId": agent_id},
+        )
+        return Task(**data)
+
+    async def unassign_task(self, agent_id: str, task_id: str) -> Task:
+        """Unassign a task from a specific agent.
+
+        Args:
+            agent_id: UUID of the agent to unassign.
+            task_id: UUID of the task to unassign.
+
+        Returns:
+            The :class:`Task` with updated assignment.
+        """
+        data = await self._request(
+            "POST",
+            f"/tasks/{task_id}/unassign",
+            json_data={"agentId": agent_id},
+        )
         return Task(**data)
 
     # -------------------------------------------------------------------------
@@ -1359,6 +1590,37 @@ class AsyncApexClient(BaseApexClient):
         data = await self._request("POST", f"/dags/{dag_id}/resume")
         return DAG(**data)
 
+    async def get_dag_executions(
+        self,
+        dag_id: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Retrieve executions of a DAG.
+
+        Args:
+            dag_id: UUID of the DAG.
+            limit: Maximum number of executions to return.
+            offset: Number of executions to skip.
+
+        Returns:
+            A dictionary containing DAG executions.
+        """
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        return await self._request("GET", f"/dags/{dag_id}/executions", params=params)
+
+    async def get_dag_execution(self, dag_id: str, execution_id: str) -> dict[str, Any]:
+        """Retrieve a specific DAG execution.
+
+        Args:
+            dag_id: UUID of the DAG.
+            execution_id: UUID of the execution.
+
+        Returns:
+            A dictionary containing the DAG execution details.
+        """
+        return await self._request("GET", f"/dags/{dag_id}/executions/{execution_id}")
+
     # -------------------------------------------------------------------------
     # Approvals
     # -------------------------------------------------------------------------
@@ -1436,3 +1698,29 @@ class AsyncApexClient(BaseApexClient):
             json_data=decision.model_dump(by_alias=True, exclude_none=True),
         )
         return Approval(**data)
+
+    async def cancel_approval(self, approval_id: str) -> Approval:
+        """Cancel a pending approval request.
+
+        Args:
+            approval_id: UUID of the approval to cancel.
+
+        Returns:
+            The :class:`Approval` in ``cancelled`` status.
+        """
+        data = await self._request("POST", f"/approvals/{approval_id}/cancel")
+        return Approval(**data)
+
+    async def get_pending_approvals(self, approver_id: str | None = None) -> dict[str, Any]:
+        """Retrieve pending approvals.
+
+        Args:
+            approver_id: Optional filter by approver ID.
+
+        Returns:
+            A dictionary containing pending approvals.
+        """
+        params: dict[str, Any] = {}
+        if approver_id:
+            params["approverId"] = approver_id
+        return await self._request("GET", "/approvals/pending", params=params)

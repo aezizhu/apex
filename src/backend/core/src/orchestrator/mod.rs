@@ -17,7 +17,7 @@ pub use cnp::{
 };
 
 use std::sync::Arc;
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::{RwLock, Semaphore, Notify, Mutex};
 use dashmap::DashMap;
 use uuid::Uuid;
 
@@ -116,8 +116,8 @@ pub struct SwarmOrchestrator {
     /// Database connection pool
     db: Arc<Database>,
 
-    /// Redis client for task queue communication
-    redis_client: redis::Client,
+    /// Redis connection manager for task queue communication (with connection pooling)
+    redis_manager: Arc<redis::aio::ConnectionManager>,
 
     /// Worker pool semaphore for concurrency control
     worker_semaphore: Arc<Semaphore>,
@@ -139,6 +139,12 @@ pub struct SwarmOrchestrator {
 
     /// Distributed tracing
     tracer: Arc<Tracer>,
+
+    /// Lock for agent selection to prevent race conditions
+    agent_selection_lock: Arc<Mutex<()>>,
+
+    /// Notify for waking executor when tasks become ready
+    task_ready_notify: Arc<Notify>,
 }
 
 impl SwarmOrchestrator {
@@ -146,23 +152,26 @@ impl SwarmOrchestrator {
     pub async fn new(
         config: OrchestratorConfig,
         db: Arc<Database>,
-        redis_client: redis::Client,
+        redis_manager: redis::aio::ConnectionManager,
         tracer: Arc<Tracer>,
     ) -> Result<Self> {
         let model_router = Arc::new(ModelRouter::new());
         let circuit_breaker = Arc::new(CircuitBreaker::new(config.circuit_breaker_threshold));
+        let redis_manager = Arc::new(redis_manager);
 
         Ok(Self {
             worker_semaphore: Arc::new(Semaphore::new(config.max_concurrent_agents)),
             config,
             db,
-            redis_client,
+            redis_manager,
             active_dags: DashMap::new(),
             agents: Arc::new(DashMap::new()),
             contracts: DashMap::new(),
             model_router,
             circuit_breaker,
             tracer,
+            agent_selection_lock: Arc::new(Mutex::new(())),
+            task_ready_notify: Arc::new(Notify::new()),
         })
     }
 
@@ -227,9 +236,18 @@ impl SwarmOrchestrator {
             };
 
             if ready_tasks.is_empty() {
-                // No tasks ready but DAG not complete - might be waiting for running tasks
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                continue;
+                // No tasks ready but DAG not complete - wait for running tasks using Notify
+                // This replaces the busy-waiting loop with efficient task notifications
+                tokio::select! {
+                    _ = self.task_ready_notify.notified() => {
+                        // Tasks may be ready now, loop back to check
+                        continue;
+                    }
+                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(500)) => {
+                        // Timeout - re-check for ready tasks
+                        continue;
+                    }
+                }
             }
 
             // Execute ready tasks in parallel
@@ -240,12 +258,14 @@ impl SwarmOrchestrator {
 
                 let dag_lock = dag_lock.clone();
                 let db = self.db.clone();
-                let redis_client = self.redis_client.clone();
+                let redis_manager = self.redis_manager.clone();
                 let model_router = self.model_router.clone();
                 let agents = self.agents.clone();
                 let circuit_breaker = self.circuit_breaker.clone();
                 let default_limits = self.config.default_limits.clone();
                 let task_result_timeout_secs = self.config.task_result_timeout_secs;
+                let task_ready_notify = self.task_ready_notify.clone();
+                let agent_selection_lock = self.agent_selection_lock.clone();
 
                 let handle = tokio::spawn(async move {
                     let result = Self::execute_task(
@@ -253,12 +273,14 @@ impl SwarmOrchestrator {
                         dag_id,
                         dag_lock,
                         db,
-                        redis_client,
+                        redis_manager,
                         model_router,
                         agents,
                         circuit_breaker,
                         default_limits,
                         task_result_timeout_secs,
+                        task_ready_notify,
+                        agent_selection_lock,
                     ).await;
 
                     drop(permit); // Release semaphore permit
@@ -328,12 +350,14 @@ impl SwarmOrchestrator {
         dag_id: Uuid,
         dag_lock: Arc<RwLock<TaskDAG>>,
         _db: Arc<Database>,
-        redis_client: redis::Client,
+        redis_manager: Arc<redis::aio::ConnectionManager>,
         model_router: Arc<ModelRouter>,
         agents: Arc<DashMap<AgentId, Arc<Agent>>>,
         circuit_breaker: Arc<CircuitBreaker>,
         default_limits: ResourceLimits,
         task_result_timeout_secs: u64,
+        task_ready_notify: Arc<Notify>,
+        agent_selection_lock: Arc<Mutex<()>>,
     ) -> Result<TaskExecutionResult> {
         let span = tracing::info_span!("execute_task", task_id = %task_id);
         let _guard = span.enter();
@@ -351,11 +375,14 @@ impl SwarmOrchestrator {
             return Err(ApexError::internal("Circuit breaker is open"));
         }
 
-        // Select agent (round-robin for now, CNP bidding later)
-        let agent = agents.iter()
-            .find(|entry| entry.value().is_available())
-            .map(|entry| entry.value().clone())
-            .ok_or_else(|| ApexError::internal("No available agents"))?;
+        // Select agent (round-robin for now, CNP bidding later) - with lock to prevent race condition
+        let agent = {
+            let _lock = agent_selection_lock.lock().await;
+            agents.iter()
+                .find(|entry| entry.value().is_available())
+                .map(|entry| entry.value().clone())
+                .ok_or_else(|| ApexError::internal("No available agents"))?
+        };
 
         // Select model via router
         let model = if let Some(router) = Some(&model_router) {
@@ -402,13 +429,8 @@ impl SwarmOrchestrator {
             let _redis_span = tracing::info_span!("redis_publish_task", task_id = %task_id);
             let _redis_guard = _redis_span.enter();
 
-            let mut conn = redis_client.get_multiplexed_async_connection().await
-                .map_err(|e| ApexError::with_internal(
-                    crate::error::ErrorCode::CacheConnectionFailed,
-                    "Failed to connect to Redis for task publishing",
-                    e.to_string(),
-                ))?;
-
+            // Use ConnectionManager directly (clone is cheap and it handles pooling internally)
+            let mut conn = (*redis_manager).clone();
             redis::cmd("RPUSH")
                 .arg("apex:tasks:pending")
                 .arg(&payload_json)
@@ -429,12 +451,8 @@ impl SwarmOrchestrator {
             let _redis_span = tracing::info_span!("redis_await_result", task_id = %task_id, result_key = %result_key);
             let _redis_guard = _redis_span.enter();
 
-            let mut conn = redis_client.get_multiplexed_async_connection().await
-                .map_err(|e| ApexError::with_internal(
-                    crate::error::ErrorCode::CacheConnectionFailed,
-                    "Failed to connect to Redis for result polling",
-                    e.to_string(),
-                ))?;
+            // Use ConnectionManager directly (clone is cheap and it handles pooling internally)
+            let mut conn = (*redis_manager).clone();
 
             // BLPOP blocks until a result is available or the timeout expires
             let blpop_result: Option<(String, String)> = redis::cmd("BLPOP")
@@ -511,6 +529,9 @@ impl SwarmOrchestrator {
         }
 
         circuit_breaker.record_success();
+
+        // Notify the executor that tasks may be ready now
+        task_ready_notify.notify_waiters();
 
         tracing::info!(
             task_id = %task_id,
